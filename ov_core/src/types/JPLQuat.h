@@ -104,7 +104,7 @@ public:
   /**
    * @brief Implements update operation by left-multiplying the current
    * quaternion with a quaternion built from a small axis-angle perturbation.
-   *
+   * 通过用小轴 - 角扰动构建的四元化来实现更新操作。
    * @f[
    * \bar{q}=norm\Big(\begin{bmatrix} \frac{1}{2} \delta \boldsymbol{\theta}_{dx} \\ 1 \end{bmatrix}\Big) \otimes \hat{\bar{q}}
    * @f]
@@ -118,10 +118,10 @@ public:
     // Build perturbing quaternion
     Eigen::Matrix<double, 4, 1> dq;
     dq << .5 * dx, 1.0;
-    dq = ov_core::quatnorm(dq);
+    dq = ov_core::quatnorm(dq); /// 归一化
 
     // Update estimate and recompute R
-    set_value(ov_core::quat_multiply(dq, _value));
+    set_value(ov_core::quat_multiply(dq, _value)); /// dx扰动
   }
 
   /**
@@ -158,6 +158,7 @@ protected:
 
   /**
    * @brief Sets the value of the estimate and recomputes the internal rotation matrix
+   * 存储位姿的四元素
    * @param new_value New value for the quaternion estimate
    */
   void set_value_internal(const Eigen::MatrixXd &new_value) {
@@ -173,6 +174,7 @@ protected:
 
   /**
    * @brief Sets the fej value and recomputes the fej rotation matrix
+   * first-estimate Jacobian
    * @param new_value New value for the quaternion estimate
    */
   void set_fej_internal(const Eigen::MatrixXd &new_value) {

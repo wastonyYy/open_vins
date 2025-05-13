@@ -22,7 +22,7 @@
 #include "Feature.h"
 
 using namespace ov_core;
-
+// Remove measurements that do not occur at passed timestamps.
 void Feature::clean_old_measurements(const std::vector<double> &valid_times) {
 
   // Loop through each of the cameras we have
@@ -39,6 +39,7 @@ void Feature::clean_old_measurements(const std::vector<double> &valid_times) {
 
     // Loop through measurement times, remove ones that are not in our timestamps
     while (it1 != timestamps[pair.first].end()) {
+      //!
       if (std::find(valid_times.begin(), valid_times.end(), *it1) == valid_times.end()) {
         it1 = timestamps[pair.first].erase(it1);
         it2 = uvs[pair.first].erase(it2);
@@ -52,6 +53,7 @@ void Feature::clean_old_measurements(const std::vector<double> &valid_times) {
   }
 }
 
+// Remove measurements that occur at the invalid timestamps.
 void Feature::clean_invalid_measurements(const std::vector<double> &invalid_times) {
 
   // Loop through each of the cameras we have
@@ -68,6 +70,7 @@ void Feature::clean_invalid_measurements(const std::vector<double> &invalid_time
 
     // Loop through measurement times, remove ones that are in our timestamps
     while (it1 != timestamps[pair.first].end()) {
+      //!
       if (std::find(invalid_times.begin(), invalid_times.end(), *it1) != invalid_times.end()) {
         it1 = timestamps[pair.first].erase(it1);
         it2 = uvs[pair.first].erase(it2);
@@ -80,7 +83,7 @@ void Feature::clean_invalid_measurements(const std::vector<double> &invalid_time
     }
   }
 }
-
+// Remove measurements that are older then the specified timestamp.
 void Feature::clean_older_measurements(double timestamp) {
 
   // Loop through each of the cameras we have
@@ -97,6 +100,7 @@ void Feature::clean_older_measurements(double timestamp) {
 
     // Loop through measurement times, remove ones that are older then the specified one
     while (it1 != timestamps[pair.first].end()) {
+      //!
       if (*it1 <= timestamp) {
         it1 = timestamps[pair.first].erase(it1);
         it2 = uvs[pair.first].erase(it2);

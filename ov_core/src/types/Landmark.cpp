@@ -24,14 +24,17 @@
 using namespace ov_type;
 
 Eigen::Matrix<double, 3, 1> Landmark::get_xyz(bool getfej) const {
-
+  // 点是直接以三维坐标（X, Y, Z）来表示。
+  // 输出方式：直接返回 value() 或 fej()，就是三维坐标本身
   // CASE: Global 3d feature representation
   // CASE: Anchored 3D feature representation
   if (_feat_representation == LandmarkRepresentation::Representation::GLOBAL_3D ||
       _feat_representation == LandmarkRepresentation::Representation::ANCHORED_3D) {
     return (getfej) ? fej() : value();
   }
-
+  // 点是用一个 方向（两个角）+ 逆深度 表示的。
+  // p_invFinG = (theta, phi, rho)，分别是方位角、俯仰角、逆深度。
+  // 转换方式：把极坐标 + 逆深度转为 3D 坐标。
   // CASE: Global inverse depth feature representation
   // CASE: Anchored full inverse depth feature representation
   if (_feat_representation == LandmarkRepresentation::Representation::GLOBAL_FULL_INVERSE_DEPTH ||
@@ -42,7 +45,7 @@ Eigen::Matrix<double, 3, 1> Landmark::get_xyz(bool getfej) const {
         (1 / p_invFinG(2)) * std::sin(p_invFinG(0)) * std::sin(p_invFinG(1)), (1 / p_invFinG(2)) * std::cos(p_invFinG(1));
     return p_FinG;
   }
-
+  // MSCKF 使用的逆深度模型，表示为 (α, β, ρ)
   // CASE: Anchored MSCKF inverse depth feature representation
   if (_feat_representation == LandmarkRepresentation::Representation::ANCHORED_MSCKF_INVERSE_DEPTH) {
     Eigen::Matrix<double, 3, 1> p_FinA;
@@ -51,6 +54,7 @@ Eigen::Matrix<double, 3, 1> Landmark::get_xyz(bool getfej) const {
     return p_FinA;
   }
 
+  // 方向是固定已知的（单位向量 uv_norm_zero），只优化深度。
   // CASE: Estimate single depth of the feature using the initial bearing
   if (_feat_representation == LandmarkRepresentation::Representation::ANCHORED_INVERSE_DEPTH_SINGLE) {
     // if(getfej) return 1.0/fej()(0)*uv_norm_zero_fej;

@@ -158,7 +158,7 @@ inline Eigen::Matrix<double, 3, 3> quat_2_Rot(const Eigen::Matrix<double, 4, 1> 
 
 /**
  * @brief Multiply two JPL quaternions
- *
+ * 把两个旋转的四元数 q 和 p 按照数学规则乘起来，结果强制实部为正，然后归一化成一个标准方向
  * This is based on equation 9 in [Indirect Kalman Filter for 3D Attitude Estimation](http://mars.cs.umn.edu/tr/reports/Trawny05b.pdf).
  * We also enforce that the quaternion is unique by having q_4 be greater than zero.
  * \f{align*}{
@@ -172,7 +172,7 @@ inline Eigen::Matrix<double, 3, 3> quat_2_Rot(const Eigen::Matrix<double, 4, 1> 
  *  \mathbf{p} \\ p_4
  *  \end{bmatrix}
  * @f}
- *
+ * 
  * @param[in] q First JPL quaternion
  * @param[in] p Second JPL quaternion
  * @return 4x1 resulting q*p quaternion

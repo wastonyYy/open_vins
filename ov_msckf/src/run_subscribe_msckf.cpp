@@ -56,6 +56,7 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "run_subscribe_msckf");
   auto nh = std::make_shared<ros::NodeHandle>("~");
   nh->param<std::string>("config_path", config_path, config_path);
+  std::cout << "config_path: " << config_path << std::endl;
 #elif ROS_AVAILABLE == 2
   // Launch our ros node
   rclcpp::init(argc, argv);

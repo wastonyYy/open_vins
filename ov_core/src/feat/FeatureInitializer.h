@@ -40,7 +40,10 @@ class Feature;
  * Please see the @ref update-featinit page for detailed derivations.
  */
 class FeatureInitializer {
-
+// 1 成员变量
+// 2 三角化特征点
+// 3 高斯非线性迭代优化之前三角化得到的粗略特征点坐标
+// 4 重投影误差计算
 public:
   /**
    * @brief Structure which stores pose estimates for use in triangulation

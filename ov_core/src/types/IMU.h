@@ -200,6 +200,12 @@ protected:
    * @brief Sets the value of the estimate
    * @param new_value New value we should set
    */
+  // 索引范围	    含义
+  // 0-3	      姿态四元数 q
+  // 4-6	      平移（位置） t
+  // 7-9	      速度 v
+  // 10-12	    加速度偏置 ba
+  // 13-15	    陀螺仪偏置 bg
   void set_value_internal(const Eigen::MatrixXd &new_value) {
 
     assert(new_value.rows() == 16);

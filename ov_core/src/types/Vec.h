@@ -34,6 +34,7 @@ class Vec : public Type {
 public:
   /**
    * @brief Default constructor for Vec
+   * 维度大小可调
    * @param dim Size of the vector (will be same as error state)
    */
   Vec(int dim) : Type(dim) {

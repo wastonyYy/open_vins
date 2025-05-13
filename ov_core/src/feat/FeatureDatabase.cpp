@@ -37,7 +37,7 @@ std::shared_ptr<Feature> FeatureDatabase::get_feature(size_t id, bool remove) {
     return nullptr;
   }
 }
-
+// Get a specified feature clone (pointer is thread safe)
 bool FeatureDatabase::get_feature_clone(size_t id, Feature &feat) {
   std::lock_guard<std::mutex> lck(mtx);
   if (features_idlookup.find(id) == features_idlookup.end())
@@ -83,6 +83,9 @@ void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id,
   // Append this new feature into our database
   features_idlookup[id] = feat;
 }
+// This function will return all features that do not a measurement at a time greater than the specified time. 
+// For example this could be used to get features that have not been successfully tracked into the newest frame. 
+// All features returned will not have any measurements occurring at a time greater then the specified.
 
 std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_not_containing_newer(double timestamp, bool remove, bool skip_deleted) {
 
@@ -124,7 +127,9 @@ std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_not_containing_n
   // Return the old features
   return feats_old;
 }
-
+// This will collect all features that have measurements occurring before the specified timestamp. 
+// For example, we would want to remove all features older then the last clone/state in our sliding window.
+// 拿老点，可以用来去除滑动窗口外的点
 std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_containing_older(double timestamp, bool remove, bool skip_deleted) {
 
   // Our vector of old features
