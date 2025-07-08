@@ -65,7 +65,7 @@ void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id,
     std::shared_ptr<Feature> feat = features_idlookup.at(id);
     // Append this new information to it!
     feat->uvs[cam_id].push_back(Eigen::Vector2f(u, v));
-    feat->uvs_norm[cam_id].push_back(Eigen::Vector2f(u_n, v_n));
+    feat->uvs_norm[cam_id].push_back(Eigen::Vector2f(u_n, v_n)); /// 归一化坐标 用于后续几何计算 三角化 PnP等
     feat->timestamps[cam_id].push_back(timestamp);
     return;
   }
@@ -86,7 +86,7 @@ void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id,
 // This function will return all features that do not a measurement at a time greater than the specified time. 
 // For example this could be used to get features that have not been successfully tracked into the newest frame. 
 // All features returned will not have any measurements occurring at a time greater then the specified.
-
+// 返回在timestamp之后已经丢失的特征点，相当于 > timestamp
 std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_not_containing_newer(double timestamp, bool remove, bool skip_deleted) {
 
   // Our vector of features that do not have measurements after the specified time
@@ -170,7 +170,7 @@ std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_containing_older
   // Return the old features
   return feats_old;
 }
-
+// 返回所有包含这个时间戳的特征点
 std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_containing(double timestamp, bool remove, bool skip_deleted) {
 
   // Our vector of old features

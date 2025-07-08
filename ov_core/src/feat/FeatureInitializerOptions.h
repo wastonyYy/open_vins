@@ -39,7 +39,7 @@ struct FeatureInitializerOptions {
   bool refine_features = true;
 
   /// Max runs for Levenberg-Marquardt
-  int max_runs = 5;
+  int max_runs = 5; /// 20?
 
   /// Init lambda for Levenberg-Marquardt optimization
   double init_lamda = 1e-3;

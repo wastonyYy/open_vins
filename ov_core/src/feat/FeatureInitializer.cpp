@@ -35,6 +35,8 @@ bool FeatureInitializer::single_triangulation(std::shared_ptr<Feature> feat,
   int total_meas = 0;
   size_t anchor_most_meas = 0;
   size_t most_meas = 0;
+  // 遍历所有相机的特征点观测，找到观测次数最多的相机作为锚点相机 anchor_cam_id
+  // 使用该相机最后一次观测的时间作为锚点时间戳 anchor_clone_timestamp
   for (auto const &pair : feat->timestamps) {
     total_meas += (int)pair.second.size();
     if (pair.second.size() > most_meas) {
@@ -50,11 +52,13 @@ bool FeatureInitializer::single_triangulation(std::shared_ptr<Feature> feat,
   Eigen::Vector3d b = Eigen::Vector3d::Zero();
 
   // Get the position of the anchor pose
+  // 获取锚点相机的位姿信息
   ClonePose anchorclone = clonesCAM.at(feat->anchor_cam_id).at(feat->anchor_clone_timestamp);
   const Eigen::Matrix<double, 3, 3> &R_GtoA = anchorclone.Rot();
   const Eigen::Matrix<double, 3, 1> &p_AinG = anchorclone.pos();
 
   // Loop through each camera for this feature
+  // 对于每个相机每次观测
   for (auto const &pair : feat->timestamps) {
 
     // Add CAM_I features
@@ -65,6 +69,7 @@ bool FeatureInitializer::single_triangulation(std::shared_ptr<Feature> feat,
       const Eigen::Matrix<double, 3, 1> &p_CiinG = clonesCAM.at(pair.first).at(feat->timestamps.at(pair.first).at(m)).pos();
 
       // Convert current position relative to anchor
+      // 当前相机相对于锚点相机的相对位姿
       Eigen::Matrix<double, 3, 3> R_AtoCi;
       R_AtoCi.noalias() = R_GtoCi * R_GtoA.transpose();
       Eigen::Matrix<double, 3, 1> p_CiinA;
@@ -85,13 +90,16 @@ bool FeatureInitializer::single_triangulation(std::shared_ptr<Feature> feat,
   }
 
   // Solve the linear system
+  // QR分解Ax=b 的未知数
   Eigen::MatrixXd p_f = A.colPivHouseholderQr().solve(b);
 
-  // Check A and p_f
+  // Check A and 
+  // 用SVD分解检查A矩阵，用配置文件的参数来检查pf的合理性
   Eigen::JacobiSVD<Eigen::Matrix3d> svd(A);
   Eigen::MatrixXd singularValues;
   singularValues.resize(svd.singularValues().rows(), 1);
   singularValues = svd.singularValues();
+  // condA 条件数 是判断矩阵病态与否的一种度量，条件数越大矩阵越病态
   double condA = singularValues(0, 0) / singularValues(singularValues.rows() - 1, 0);
 
   // std::stringstream ss;
@@ -100,6 +108,7 @@ bool FeatureInitializer::single_triangulation(std::shared_ptr<Feature> feat,
 
   // If we have a bad condition number, or it is too close
   // Then set the flag for bad (i.e. set z-axis to nan)
+  // max_cond_number = 10000 min_dist = 0.1 max_dist = 60
   if (std::abs(condA) > _options.max_cond_number || p_f(2, 0) < _options.min_dist || p_f(2, 0) > _options.max_dist ||
       std::isnan(p_f.norm())) {
     return false;
@@ -212,7 +221,8 @@ bool FeatureInitializer::single_gaussnewton(std::shared_ptr<Feature> feat,
   Eigen::Matrix<double, 3, 3> Hess = Eigen::Matrix<double, 3, 3>::Zero();
   Eigen::Matrix<double, 3, 1> grad = Eigen::Matrix<double, 3, 1>::Zero();
 
-  // Cost at the last iteration
+  // Cost at the last 
+  // 计算2D特征点的重投影误差平方（作为后续迭代过程中的残差初始值，以后每次迭代都会和它进行比较，从而判断误差是否减小）
   double cost_old = compute_error(clonesCAM, feat, alpha, beta, rho);
 
   // Get the position of the anchor pose
@@ -257,6 +267,9 @@ bool FeatureInitializer::single_gaussnewton(std::shared_ptr<Feature> feat,
           //=====================================================================================
 
           // Middle variables of the system
+          // (alpha, beta, rho) 表示的 三维点方向向量 转换到当前帧下的 3D 坐标：
+          // h = R_AtoCi * [alpha, beta, 1] + rho * p_AinCi
+          // 相机观测到的特征点3D坐标转成 h表示
           double hi1 = R_AtoCi(0, 0) * alpha + R_AtoCi(0, 1) * beta + R_AtoCi(0, 2) + rho * p_AinCi(0, 0);
           double hi2 = R_AtoCi(1, 0) * alpha + R_AtoCi(1, 1) * beta + R_AtoCi(1, 2) + rho * p_AinCi(1, 0);
           double hi3 = R_AtoCi(2, 0) * alpha + R_AtoCi(2, 1) * beta + R_AtoCi(2, 2) + rho * p_AinCi(2, 0);
@@ -271,6 +284,7 @@ bool FeatureInitializer::single_gaussnewton(std::shared_ptr<Feature> feat,
           H << d_z1_d_alpha, d_z1_d_beta, d_z1_d_rho, d_z2_d_alpha, d_z2_d_beta, d_z2_d_rho;
           // Calculate residual
           Eigen::Matrix<float, 2, 1> z;
+          // z = h.head(2) / h(2) 是归一化图像坐标，即重投影点
           z << hi1 / hi3, hi2 / hi3;
           Eigen::Matrix<float, 2, 1> res = feat->uvs_norm.at(pair.first).at(m) - z;
 
@@ -373,7 +387,7 @@ bool FeatureInitializer::single_gaussnewton(std::shared_ptr<Feature> feat,
   feat->p_FinG = R_GtoA.transpose() * feat->p_FinA + p_AinG;
   return true;
 }
-
+// 计算2D特征点的重投影误差平方
 double FeatureInitializer::compute_error(std::unordered_map<size_t, std::unordered_map<double, ClonePose>> &clonesCAM,
                                          std::shared_ptr<Feature> feat, double alpha, double beta, double rho) {
 
