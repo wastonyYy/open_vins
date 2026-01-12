@@ -20,7 +20,11 @@
  */
 
 #include "VioManager.h"
-
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
@@ -47,7 +51,9 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
+VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false), 
+      total_marg_time(0), total_msckf_update_time(0), total_slam_update_time(0), 
+      total_slam_delay_time(0), total_propagation_time(0), stat_count(0){
 
   // Nice startup message
   PRINT_DEBUG("=======================================\n");
@@ -276,7 +282,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     cv::pyrDown(mask, mask_temp, cv::Size(mask.cols / 2.0, mask.rows / 2.0));
     message.masks.at(i) = mask_temp;
   }
-
+  
   // Perform our feature tracking!
   trackFEATS->feed_new_camera(message);
 
@@ -311,7 +317,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     is_initialized_vio = try_to_initialize(message);
     if (!is_initialized_vio) {
       double time_track = (rT2 - rT1).total_microseconds() * 1e-6;
-      PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for tracking\n" RESET, time_track);
+      PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for tracking\n" RESET, time_track);
       return;
     }
   }
@@ -337,6 +343,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // Also augment it with a new clone!
   // NOTE: if the state is already at the given time (can happen in sim)
   // NOTE: then no need to prop since we already are at the desired timestep
+  // 在新的一帧图像到来时，首先将系统的状态通过IMU的数据递推到当前的相机时刻
   if (state->_timestamp != message.timestamp) {
     propagator->propagate_and_clone(state, message.timestamp);
   }
@@ -345,6 +352,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // If we have not reached max clones, we should just return...
   // This isn't super ideal, but it keeps the logic after this easier...
   // We can start processing things when we have at least 5 clones since we can start triangulating things...
+  // 如果没有足够的IMU数据也无法递推，同时如果IMU的数据不足，也无法递推到当前时刻
   if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
     PRINT_DEBUG("waiting for enough clone states (%d of %d)....\n", (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
@@ -609,16 +617,44 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   double time_marg = (rT7 - rT6).total_microseconds() * 1e-6;
   double time_total = (rT7 - rT1).total_microseconds() * 1e-6;
 
-  // Timing information
-  PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for tracking\n" RESET, time_track);
-  PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for propagation\n" RESET, time_prop);
-  PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for MSCKF update (%d feats)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
+  stat_count++;
+  total_marg_time += time_marg;
+  total_msckf_update_time += time_msckf;
+  total_slam_update_time += time_slam_update;
+  total_slam_delay_time += time_slam_delay;
+  total_propagation_time += time_prop;
+ 
+  PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for tracking\n" RESET, time_track);
+  PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for propagation\n" RESET, time_prop);
+  PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for MSCKF update (%d feats)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
   if (state->_options.max_slam_features > 0) {
-    PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for SLAM update (%d feats)\n" RESET, time_slam_update, (int)state->_features_SLAM.size());
-    PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for SLAM delayed init (%d feats)\n" RESET, time_slam_delay, (int)feats_slam_DELAYED.size());
+    PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for SLAM update (%d feats)\n" RESET, time_slam_update, (int)state->_features_SLAM.size());
+    PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for SLAM delayed init (%d feats)\n" RESET, time_slam_delay, (int)feats_slam_DELAYED.size());
   }
-  PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for re-tri & marg (%d clones in state)\n" RESET, time_marg, (int)state->_clones_IMU.size());
-
+  PRINT_DEBUG(BLUE "[TIME]: %.6f seconds for re-tri & marg (%d clones in state)\n" RESET, time_marg, (int)state->_clones_IMU.size());
+   if (stat_count > 0) {
+    double avg_marg = total_marg_time / stat_count;
+    double avg_msckf = total_msckf_update_time / stat_count;
+    double avg_slam_update = total_slam_update_time / stat_count;
+    double avg_slam_delay = total_slam_delay_time / stat_count;
+    double avg_propagation = total_propagation_time / stat_count;
+    PRINT_DEBUG(GREEN "=========================================\n" RESET);
+    PRINT_DEBUG(GREEN "TIMING STATISTICS SUMMARY\n" RESET);
+    PRINT_DEBUG(GREEN "=========================================\n" RESET);
+    PRINT_DEBUG(GREEN "Total iterations: %d\n" RESET, stat_count);
+    PRINT_DEBUG(GREEN "Total marg : %.6f seconds (avg: %.6f)\n" RESET, 
+                total_marg_time, avg_marg);
+    PRINT_DEBUG(GREEN "Total MSCKF update: %.6f seconds (avg: %.6f)\n" RESET, 
+                total_msckf_update_time, avg_msckf);
+    PRINT_DEBUG(GREEN "Total SLAM update: %.6f seconds (avg: %.6f)\n" RESET, 
+                total_slam_update_time, avg_slam_update);
+    PRINT_DEBUG(GREEN "Total SLAM delayed init: %.6f seconds (avg: %.6f)\n" RESET, 
+                total_slam_delay_time, avg_slam_delay);
+    PRINT_DEBUG(GREEN "Total propagation: %.6f seconds (avg: %.6f)\n" RESET, 
+                total_propagation_time, avg_propagation);
+    PRINT_DEBUG(GREEN "=========================================\n\n" RESET);
+  }
+  
   std::stringstream ss;
   ss << "[TIME]: " << std::setprecision(4) << time_total << " seconds for total (camera";
   for (const auto &id : message.sensor_ids) {
@@ -641,6 +677,90 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     }
     of_statistics << time_marg << "," << time_total << std::endl;
     of_statistics.flush();
+  }
+
+// Extract current pose and velocity information
+  if (is_initialized_vio && state != nullptr) {
+    // Get position (x, y, z)
+    Eigen::Vector3d position = state->_imu->pos().cast<double>();
+    // Get orientation as quaternion (w, x, y, z)
+    Eigen::Vector4d orientation = state->_imu->quat().cast<double>();
+    // Get raw velocity from IMU state (SLAM algorithm's internal velocity calculation)
+    Eigen::Vector3d raw_velocity = state->_imu->vel().cast<double>();
+    // Get timestamp
+    double timestamp = state->_timestamp;
+    
+    // Calculate velocity and pose differences
+    Eigen::Vector3d diff_velocity = Eigen::Vector3d::Zero();
+    Eigen::Vector3d pos_diff = Eigen::Vector3d::Zero();
+    double ori_diff_angle = 0.0;
+    Eigen::Vector3d vel_diff = Eigen::Vector3d::Zero();
+    
+    if (last_timestamp > 0) {
+      // Calculate time difference
+      double dt = timestamp - last_timestamp;
+      if (dt > 0.001) { // Avoid division by zero and large jumps
+        // Calculate velocity from position difference
+        diff_velocity = (position - last_position) / dt;
+        
+        // Calculate position difference
+        pos_diff = position - last_position;
+        
+        // Calculate orientation difference (angle between quaternions)
+        double dot_product = orientation.dot(last_orientation);
+        dot_product = std::max(std::min(dot_product, 1.0), -1.0); // Clamp to avoid numerical issues
+        ori_diff_angle = 2.0 * std::acos(std::abs(dot_product));
+        
+        // Calculate velocity difference between raw velocity and diff velocity
+        vel_diff = raw_velocity - diff_velocity;
+      }
+    }
+    
+    // Update last values for next iteration
+    last_timestamp = timestamp;
+    last_position = position;
+    last_orientation = orientation;
+    
+    static std::ofstream performance_csv;
+    static bool csv_initialized = false;
+    if (!csv_initialized) {
+      // Create logs directory if it doesn't exist
+      const std::string logs_dir = "/root/catkin_ws/src/open_vins/logs";
+      mkdir(logs_dir.c_str(), 0755); // Create directory with rwxr-xr-x permissions
+      
+      // Full file path
+      const std::string csv_file_path = logs_dir + "/vio_performance.csv";
+      
+      // Check if file exists
+      bool file_exists = std::ifstream(csv_file_path).good();
+      
+      // Open in append mode if file exists, otherwise create new
+      performance_csv.open(csv_file_path, file_exists ? std::ios::app : std::ios::out);
+      
+      if (performance_csv.is_open()) {
+        // Write CSV header only if file was newly created
+        if (!file_exists) {
+          performance_csv << "timestamp,pos_x,pos_y,pos_z,ori_w,ori_x,ori_y,ori_z,";
+          performance_csv << "raw_vel_x,raw_vel_y,raw_vel_z,diff_vel_x,diff_vel_y,diff_vel_z,vel_diff_x,vel_diff_y,vel_diff_z,";
+          performance_csv << "pos_diff_x,pos_diff_y,pos_diff_z,ori_diff_angle\n";
+        }
+        csv_initialized = true;
+      } else {
+        PRINT_ERROR(RED "Failed to open performance CSV file: %s\n" RESET, csv_file_path.c_str());
+      }
+    }
+    
+    if (performance_csv.is_open()) {
+      performance_csv << std::fixed << std::setprecision(15) << timestamp << ",";
+      performance_csv << position.x() << "," << position.y() << "," << position.z() << ",";
+      performance_csv << orientation.w() << "," << orientation.x() << "," << orientation.y() << "," << orientation.z() << ",";
+      performance_csv << raw_velocity.x() << "," << raw_velocity.y() << "," << raw_velocity.z() << ",";
+      performance_csv << diff_velocity.x() << "," << diff_velocity.y() << "," << diff_velocity.z() << ",";
+      performance_csv << vel_diff.x() << "," << vel_diff.y() << "," << vel_diff.z() << ",";
+      performance_csv << pos_diff.x() << "," << pos_diff.y() << "," << pos_diff.z() << ",";
+      performance_csv << ori_diff_angle << "\n";
+      performance_csv.flush();
+    }
   }
 
   // Update our distance traveled
@@ -711,4 +831,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
                state->_calib_imu_tg->value()(4), state->_calib_imu_tg->value()(5), state->_calib_imu_tg->value()(6),
                state->_calib_imu_tg->value()(7), state->_calib_imu_tg->value()(8));
   }
+}
+VioManager::~VioManager() {
+
 }
