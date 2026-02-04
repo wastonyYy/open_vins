@@ -678,159 +678,134 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     of_statistics << time_marg << "," << time_total << std::endl;
     of_statistics.flush();
   }
-
-// Extract current pose and velocity information
-  if (is_initialized_vio && state != nullptr) {
-    // Get position (x, y, z)
-    Eigen::Vector3d position = state->_imu->pos().cast<double>();
-    // Get orientation as quaternion (w, x, y, z)
-    Eigen::Vector4d orientation = state->_imu->quat().cast<double>();
-    // Get raw velocity from IMU state (SLAM algorithm's internal velocity calculation)
-    Eigen::Vector3d raw_velocity = state->_imu->vel().cast<double>();
-    // Get timestamp
-    double timestamp = state->_timestamp;
+// -------------------------SQRT_VINS COMPARE-------------------------------------
+  // if (is_initialized_vio && state != nullptr) {
+  //   Eigen::Vector3d position = state->_imu->pos().cast<double>();
+  //   Eigen::Vector4d orientation = state->_imu->quat().cast<double>();
+  //   Eigen::Vector3d raw_velocity = state->_imu->vel().cast<double>();
+  //   double timestamp = state->_timestamp;
     
-    // Calculate velocity and pose differences
-    Eigen::Vector3d diff_velocity = Eigen::Vector3d::Zero();
-    Eigen::Vector3d pos_diff = Eigen::Vector3d::Zero();
-    double ori_diff_angle = 0.0;
-    Eigen::Vector3d vel_diff = Eigen::Vector3d::Zero();
+  //   Eigen::Vector3d diff_velocity = Eigen::Vector3d::Zero();
+  //   Eigen::Vector3d pos_diff = Eigen::Vector3d::Zero();
+  //   double ori_diff_angle = 0.0;
+  //   Eigen::Vector3d vel_diff = Eigen::Vector3d::Zero();
     
-    if (last_timestamp > 0) {
-      // Calculate time difference
-      double dt = timestamp - last_timestamp;
-      if (dt > 0.001) { // Avoid division by zero and large jumps
-        // Calculate velocity from position difference
-        diff_velocity = (position - last_position) / dt;
-        
-        // Calculate position difference
-        pos_diff = position - last_position;
-        
-        // Calculate orientation difference (angle between quaternions)
-        double dot_product = orientation.dot(last_orientation);
-        dot_product = std::max(std::min(dot_product, 1.0), -1.0); // Clamp to avoid numerical issues
-        ori_diff_angle = 2.0 * std::acos(std::abs(dot_product));
-        
-        // Calculate velocity difference between raw velocity and diff velocity
-        vel_diff = raw_velocity - diff_velocity;
-      }
-    }
+  //   if (last_timestamp > 0) {
+  //     double dt = timestamp - last_timestamp;
+  //     if (dt > 0.001) { 
+  //       diff_velocity = (position - last_position) / dt;
+  //       pos_diff = position - last_position;
+  //       double dot_product = orientation.dot(last_orientation);
+  //       dot_product = std::max(std::min(dot_product, 1.0), -1.0); 
+  //       ori_diff_angle = 2.0 * std::acos(std::abs(dot_product));
+  //       vel_diff = raw_velocity - diff_velocity;
+  //     }
+  //   }
     
-    // Update last values for next iteration
-    last_timestamp = timestamp;
-    last_position = position;
-    last_orientation = orientation;
+  //   last_timestamp = timestamp;
+  //   last_position = position;
+  //   last_orientation = orientation;
     
-    static std::ofstream performance_csv;
-    static bool csv_initialized = false;
-    if (!csv_initialized) {
-      // Create logs directory if it doesn't exist
-      const std::string logs_dir = "/root/catkin_ws/src/open_vins/logs";
-      mkdir(logs_dir.c_str(), 0755); // Create directory with rwxr-xr-x permissions
+  //   static std::ofstream performance_csv;
+  //   static bool csv_initialized = false;
+  //   if (!csv_initialized) {
+  //     const std::string logs_dir = "/root/catkin_ws/src/open_vins/logs";
+  //     mkdir(logs_dir.c_str(), 0755); 
       
-      // Full file path
-      const std::string csv_file_path = logs_dir + "/vio_performance.csv";
+  //     const std::string csv_file_path = logs_dir + "/vio_performance.csv";
       
-      // Check if file exists
-      bool file_exists = std::ifstream(csv_file_path).good();
+  //     bool file_exists = std::ifstream(csv_file_path).good();
       
-      // Open in append mode if file exists, otherwise create new
-      performance_csv.open(csv_file_path, file_exists ? std::ios::app : std::ios::out);
+  //     performance_csv.open(csv_file_path, file_exists ? std::ios::app : std::ios::out);
       
-      if (performance_csv.is_open()) {
-        // Write CSV header only if file was newly created
-        if (!file_exists) {
-          performance_csv << "timestamp,pos_x,pos_y,pos_z,ori_w,ori_x,ori_y,ori_z,";
-          performance_csv << "raw_vel_x,raw_vel_y,raw_vel_z,diff_vel_x,diff_vel_y,diff_vel_z,vel_diff_x,vel_diff_y,vel_diff_z,";
-          performance_csv << "pos_diff_x,pos_diff_y,pos_diff_z,ori_diff_angle\n";
-        }
-        csv_initialized = true;
-      } else {
-        PRINT_ERROR(RED "Failed to open performance CSV file: %s\n" RESET, csv_file_path.c_str());
-      }
-    }
+  //     if (performance_csv.is_open()) {
+  //       if (!file_exists) {
+  //         performance_csv << "timestamp,pos_x,pos_y,pos_z,ori_w,ori_x,ori_y,ori_z,";
+  //         performance_csv << "raw_vel_x,raw_vel_y,raw_vel_z,diff_vel_x,diff_vel_y,diff_vel_z,vel_diff_x,vel_diff_y,vel_diff_z,";
+  //         performance_csv << "pos_diff_x,pos_diff_y,pos_diff_z,ori_diff_angle\n";
+  //       }
+  //       csv_initialized = true;
+  //     } else {
+  //       PRINT_ERROR(RED "Failed to open performance CSV file: %s\n" RESET, csv_file_path.c_str());
+  //     }
+  //   }
     
-    if (performance_csv.is_open()) {
-      performance_csv << std::fixed << std::setprecision(15) << timestamp << ",";
-      performance_csv << position.x() << "," << position.y() << "," << position.z() << ",";
-      performance_csv << orientation.w() << "," << orientation.x() << "," << orientation.y() << "," << orientation.z() << ",";
-      performance_csv << raw_velocity.x() << "," << raw_velocity.y() << "," << raw_velocity.z() << ",";
-      performance_csv << diff_velocity.x() << "," << diff_velocity.y() << "," << diff_velocity.z() << ",";
-      performance_csv << vel_diff.x() << "," << vel_diff.y() << "," << vel_diff.z() << ",";
-      performance_csv << pos_diff.x() << "," << pos_diff.y() << "," << pos_diff.z() << ",";
-      performance_csv << ori_diff_angle << "\n";
-      performance_csv.flush();
-    }
-  }
+  //   if (performance_csv.is_open()) {
+  //     performance_csv << std::fixed << std::setprecision(15) << timestamp << ",";
+  //     performance_csv << position.x() << "," << position.y() << "," << position.z() << ",";
+  //     performance_csv << orientation.w() << "," << orientation.x() << "," << orientation.y() << "," << orientation.z() << ",";
+  //     performance_csv << raw_velocity.x() << "," << raw_velocity.y() << "," << raw_velocity.z() << ",";
+  //     performance_csv << diff_velocity.x() << "," << diff_velocity.y() << "," << diff_velocity.z() << ",";
+  //     performance_csv << vel_diff.x() << "," << vel_diff.y() << "," << vel_diff.z() << ",";
+  //     performance_csv << pos_diff.x() << "," << pos_diff.y() << "," << pos_diff.z() << ",";
+  //     performance_csv << ori_diff_angle << "\n";
+  //     performance_csv.flush();
+  //   }
+  // }
 
-  // Update our distance traveled
-  if (timelastupdate != -1 && state->_clones_IMU.find(timelastupdate) != state->_clones_IMU.end()) {
-    Eigen::Matrix<double, 3, 1> dx = state->_imu->pos() - state->_clones_IMU.at(timelastupdate)->pos();
-    distance += dx.norm();
-  }
-  timelastupdate = message.timestamp;
+  // if (timelastupdate != -1 && state->_clones_IMU.find(timelastupdate) != state->_clones_IMU.end()) {
+  //   Eigen::Matrix<double, 3, 1> dx = state->_imu->pos() - state->_clones_IMU.at(timelastupdate)->pos();
+  //   distance += dx.norm();
+  // }
+  // timelastupdate = message.timestamp;
 
-  // Debug, print our current state
-  PRINT_INFO("q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | dist = %.2f (meters)\n", state->_imu->quat()(0),
-             state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
-             state->_imu->pos()(2), distance);
-  PRINT_INFO("bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
-             state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
+  // PRINT_INFO("q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | dist = %.2f (meters)\n", state->_imu->quat()(0),
+  //            state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
+  //            state->_imu->pos()(2), distance);
+  // PRINT_INFO("bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
+  //            state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
 
-  // Debug for camera imu offset
-  if (state->_options.do_calib_camera_timeoffset) {
-    PRINT_INFO("camera-imu timeoffset = %.5f\n", state->_calib_dt_CAMtoIMU->value()(0));
-  }
+  // if (state->_options.do_calib_camera_timeoffset) {
+  //   PRINT_INFO("camera-imu timeoffset = %.5f\n", state->_calib_dt_CAMtoIMU->value()(0));
+  // }
 
-  // Debug for camera intrinsics
-  if (state->_options.do_calib_camera_intrinsics) {
-    for (int i = 0; i < state->_options.num_cameras; i++) {
-      std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
-      PRINT_INFO("cam%d intrinsics = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f,%.3f\n", (int)i, calib->value()(0), calib->value()(1),
-                 calib->value()(2), calib->value()(3), calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
-    }
-  }
+  // if (state->_options.do_calib_camera_intrinsics) {
+  //   for (int i = 0; i < state->_options.num_cameras; i++) {
+  //     std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
+  //     PRINT_INFO("cam%d intrinsics = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f,%.3f\n", (int)i, calib->value()(0), calib->value()(1),
+  //                calib->value()(2), calib->value()(3), calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
+  //   }
+  // }
 
-  // Debug for camera extrinsics
-  if (state->_options.do_calib_camera_pose) {
-    for (int i = 0; i < state->_options.num_cameras; i++) {
-      std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
-      PRINT_INFO("cam%d extrinsics = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f\n", (int)i, calib->quat()(0), calib->quat()(1), calib->quat()(2),
-                 calib->quat()(3), calib->pos()(0), calib->pos()(1), calib->pos()(2));
-    }
-  }
+  // if (state->_options.do_calib_camera_pose) {
+  //   for (int i = 0; i < state->_options.num_cameras; i++) {
+  //     std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
+  //     PRINT_INFO("cam%d extrinsics = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f\n", (int)i, calib->quat()(0), calib->quat()(1), calib->quat()(2),
+  //                calib->quat()(3), calib->pos()(0), calib->pos()(1), calib->pos()(2));
+  //   }
+  // }
 
-  // Debug for imu intrinsics
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    PRINT_INFO("q_GYROtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_GYROtoIMU->value()(0), state->_calib_imu_GYROtoIMU->value()(1),
-               state->_calib_imu_GYROtoIMU->value()(2), state->_calib_imu_GYROtoIMU->value()(3));
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    PRINT_INFO("q_ACCtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_ACCtoIMU->value()(0), state->_calib_imu_ACCtoIMU->value()(1),
-               state->_calib_imu_ACCtoIMU->value()(2), state->_calib_imu_ACCtoIMU->value()(3));
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    PRINT_INFO("Dw = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
-               state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
-               state->_calib_imu_dw->value()(5));
-    PRINT_INFO("Da = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
-               state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
-               state->_calib_imu_da->value()(5));
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    PRINT_INFO("Dw = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
-               state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
-               state->_calib_imu_dw->value()(5));
-    PRINT_INFO("Da = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
-               state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
-               state->_calib_imu_da->value()(5));
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.do_calib_imu_g_sensitivity) {
-    PRINT_INFO("Tg = | %.4f,%.4f,%.4f |  %.4f,%.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_tg->value()(0),
-               state->_calib_imu_tg->value()(1), state->_calib_imu_tg->value()(2), state->_calib_imu_tg->value()(3),
-               state->_calib_imu_tg->value()(4), state->_calib_imu_tg->value()(5), state->_calib_imu_tg->value()(6),
-               state->_calib_imu_tg->value()(7), state->_calib_imu_tg->value()(8));
-  }
+  // if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+  //   PRINT_INFO("q_GYROtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_GYROtoIMU->value()(0), state->_calib_imu_GYROtoIMU->value()(1),
+  //              state->_calib_imu_GYROtoIMU->value()(2), state->_calib_imu_GYROtoIMU->value()(3));
+  // }
+  // if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+  //   PRINT_INFO("q_ACCtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_ACCtoIMU->value()(0), state->_calib_imu_ACCtoIMU->value()(1),
+  //              state->_calib_imu_ACCtoIMU->value()(2), state->_calib_imu_ACCtoIMU->value()(3));
+  // }
+  // if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+  //   PRINT_INFO("Dw = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
+  //              state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
+  //              state->_calib_imu_dw->value()(5));
+  //   PRINT_INFO("Da = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
+  //              state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
+  //              state->_calib_imu_da->value()(5));
+  // }
+  // if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+  //   PRINT_INFO("Dw = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
+  //              state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
+  //              state->_calib_imu_dw->value()(5));
+  //   PRINT_INFO("Da = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
+  //              state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
+  //              state->_calib_imu_da->value()(5));
+  // }
+  // if (state->_options.do_calib_imu_intrinsics && state->_options.do_calib_imu_g_sensitivity) {
+  //   PRINT_INFO("Tg = | %.4f,%.4f,%.4f |  %.4f,%.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_tg->value()(0),
+  //              state->_calib_imu_tg->value()(1), state->_calib_imu_tg->value()(2), state->_calib_imu_tg->value()(3),
+  //              state->_calib_imu_tg->value()(4), state->_calib_imu_tg->value()(5), state->_calib_imu_tg->value()(6),
+  //              state->_calib_imu_tg->value()(7), state->_calib_imu_tg->value()(8));
+  // }
+  // -------------------------SQRT_VINS COMPARE-------------------------------------
 }
 VioManager::~VioManager() {
 

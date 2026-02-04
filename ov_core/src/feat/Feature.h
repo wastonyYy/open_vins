@@ -45,6 +45,12 @@ public:
   /// If this feature should be deleted
   bool to_delete;
 
+  int wait_time = 0;
+  int wait_keyframe_time = 0;
+
+  bool is_lookdown = false;
+  int compute_cnt = 0;
+  float u, v;
   /// UV coordinates that this feature has been seen from (mapped by camera ID)
   std::unordered_map<size_t, std::vector<Eigen::VectorXf>> uvs;
 
@@ -65,6 +71,18 @@ public:
 
   /// Triangulated position of this feature, in the global frame
   Eigen::Vector3d p_FinG;
+  
+  /// 0 : reloc, 1 : stereo, 2: map_depth
+  int reloc_type = -1;
+
+  /// 地图深度恢复的预测深度
+  double map_predict_depth = 0.0;
+
+  /// 双目测距恢复的预测深度
+  double stereo_predict_depth = 0.0;
+
+  /// 重定位恢复的预测点（全局坐标系）
+  Eigen::Vector3d reloc_predict_p_inG;
 
   /**
    * @brief Remove measurements that do not occur at passed timestamps.

@@ -15,7 +15,7 @@ calib_cam_intrinsics: false # if camera intrinsics should be optimized (focal, c
 calib_cam_timeoffset: true # if timeoffset between camera and IMU should be optimized
 calib_imu_intrinsics: false
 calib_imu_g_sensitivity: false
-timeshift_cam_imu: -0.014
+timeshift_cam_imu: -0.0255
 
 max_clones: 6 # how many clones in the sliding window
 max_points: 100 # max points for update
@@ -86,11 +86,11 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
 use_klt: true
-num_pts: 150
-fast_threshold: 20
-grid_x: 10
-grid_y: 10
-min_px_dist: 4
+num_pts: 250 #150
+fast_threshold: 5 # 20
+grid_x: 3
+grid_y: 3
+min_px_dist: 2 #4
 track_frequency: 40
 knn_ratio: 0.70
 downsample_cameras: false # will downsample image in half if true
