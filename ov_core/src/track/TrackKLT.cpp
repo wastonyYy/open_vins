@@ -73,7 +73,6 @@ void TrackKLT::feed_new_camera(const CameraData &message) {
     int test_scheme = 3; 
     
     cv::Mat img;
-<<<<<<< HEAD
     double t_start = (double)cv::getTickCount(); // 计时开始
 
     // ------------------------------------------------------
@@ -255,23 +254,6 @@ void TrackKLT::feed_new_camera(const CameraData &message) {
     }
 
     // Extract image pyramid (原流程)
-=======
-    cv::GaussianBlur(message.images.at(msg_id), img, cv::Size(3, 3), 0, 0);
-    if (histogram_method == HistogramMethod::HISTOGRAM) {
-      cv::equalizeHist(message.images.at(msg_id), img);
-    } else if (histogram_method == HistogramMethod::CLAHE) {
-      // 如果图像是在低光照下拍摄或本身噪点多，建议设为 1.5 - 2.0
-      double eq_clip_limit = 2.0;
-      // double eq_clip_limit = 10.0;
-      cv::Size eq_win_size = cv::Size(8, 8);
-      cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(eq_clip_limit, eq_win_size);
-      clahe->apply(message.images.at(msg_id), img);
-    } else {
-      img = message.images.at(msg_id);
-    }
-
-    // Extract image pyramid
->>>>>>> b4942fd6d6d0e976c90ab508507185f6678a0d21
     std::vector<cv::Mat> imgpyr;
     cv::buildOpticalFlowPyramid(img, imgpyr, win_size, pyr_levels);
 
