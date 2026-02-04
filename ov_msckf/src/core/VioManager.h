@@ -68,6 +68,8 @@ public:
    */
   VioManager(VioManagerOptions &params_);
 
+  ~VioManager();
+
   /**
    * @brief Feed function for inertial data
    * @param message Contains our timestamp and inertial information
@@ -241,8 +243,23 @@ protected:
   std::map<size_t, Eigen::Matrix3d> active_feat_linsys_A;
   std::map<size_t, Eigen::Vector3d> active_feat_linsys_b;
   std::map<size_t, int> active_feat_linsys_count;
+
+ // Variables for speed and precision evaluation
+  double last_timestamp = -1;  // Last timestamp for velocity calculation
+  Eigen::Vector3d last_position = Eigen::Vector3d::Zero();  // Last position for velocity calculation
+  Eigen::Vector4d last_orientation = Eigen::Vector4d::UnitW();  // Last orientation (quaternion) for pose difference calculation
+
+
+private:
+    double total_marg_time;          // total marg 
+    double total_msckf_update_time;  // MSCKF update
+    double total_slam_update_time;   // SLAM update
+    double total_slam_delay_time;    // SLAM delayed init
+    double total_propagation_time;   // propagation
+    int stat_count;                  // number of iterations
 };
 
-} // namespace ov_msckf
+
+} // namespace ov_srvins
 
 #endif // OV_MSCKF_VIOMANAGER_H
