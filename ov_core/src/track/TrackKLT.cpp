@@ -31,46 +31,232 @@
 
 using namespace ov_core;
 
+// 辅助函数：计算图像熵 
+double compute_entropy(const cv::Mat& img) {
+    cv::Mat hist;
+    int histSize = 256;
+    float range[] = { 0, 256 };
+    const float* histRange = { range };
+    cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, true, false);
+    hist /= img.total(); // 归一化
+    double entropy = 0;
+    for (int i = 0; i < histSize; i++) {
+        float p = hist.at<float>(i);
+        if (p > 0) entropy -= p * std::log2(p);
+    }
+    return entropy;
+}
+
 void TrackKLT::feed_new_camera(const CameraData &message) {
 
   // Error check that we have all the data
   if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {
     PRINT_ERROR(RED "[ERROR]: MESSAGE DATA SIZES DO NOT MATCH OR EMPTY!!!\n" RESET);
-    PRINT_ERROR(RED "[ERROR]:   - message.sensor_ids.size() = %zu\n" RESET, message.sensor_ids.size());
-    PRINT_ERROR(RED "[ERROR]:   - message.images.size() = %zu\n" RESET, message.images.size());
-    PRINT_ERROR(RED "[ERROR]:   - message.masks.size() = %zu\n" RESET, message.masks.size());
     std::exit(EXIT_FAILURE);
   }
 
-  // Preprocessing steps that we do not parallelize
-  // NOTE: DO NOT PARALLELIZE THESE!
-  // NOTE: These seem to be much slower if you parallelize them...
   rT1 = boost::posix_time::microsec_clock::local_time();
   size_t num_images = message.images.size();
+  
   for (size_t msg_id = 0; msg_id < num_images; msg_id++) {
 
-    // Lock this data feed for this camera
     size_t cam_id = message.sensor_ids.at(msg_id);
     std::lock_guard<std::mutex> lck(mtx_feeds.at(cam_id));
 
-    // Histogram equalize
+    // ==========================================
+    // 方案选择开关 (修改这里来切换方案)
+    // 0: 原版 (Original)
+    // 1: 简单仿真 (Simulation)
+    // 2: 专利增强 (Patent Detail Enhance)
+    // 3: 快速分层增强 (Fast Layered Enhancement)
+    // ==========================================
+    int test_scheme = 3; 
+    
     cv::Mat img;
-    if (histogram_method == HistogramMethod::HISTOGRAM) {
-      cv::equalizeHist(message.images.at(msg_id), img);
-    } else if (histogram_method == HistogramMethod::CLAHE) {
-      double eq_clip_limit = 10.0;
-      cv::Size eq_win_size = cv::Size(8, 8);
-      cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(eq_clip_limit, eq_win_size);
-      clahe->apply(message.images.at(msg_id), img);
-    } else {
-      img = message.images.at(msg_id);
+    double t_start = (double)cv::getTickCount(); // 计时开始
+
+    // ------------------------------------------------------
+    // 方案 2: 专利分层增强 (Patent)
+    // ------------------------------------------------------
+    if (test_scheme == 2) {
+        if (histogram_method == HistogramMethod::CLAHE) {
+            cv::Mat raw_img = message.images.at(msg_id);
+            cv::Mat img_16u;
+            // 强转为 16-bit
+            if (raw_img.depth() == CV_8U) raw_img.convertTo(img_16u, CV_16U, 257.0); 
+            else raw_img.copyTo(img_16u);
+
+            cv::Mat img_f;
+            img_16u.convertTo(img_f, CV_32F);
+
+            // S1: 双边滤波/高斯滤波获取低频 (用高斯代替双边以提速测试)
+            cv::Mat img_base_f;
+            cv::GaussianBlur(img_f, img_base_f, cv::Size(5, 5), 0);
+            
+            // S2: 高频细节
+            cv::Mat img_detail_f;
+            cv::subtract(img_f, img_base_f, img_detail_f);
+
+            // 中间转换 Base -> 8bit
+            cv::Mat img_base_8u;
+            double min_val, max_val;
+            cv::minMaxLoc(img_base_f, &min_val, &max_val);
+            double scale = 255.0 / (max_val - min_val + 1e-5);
+            img_base_f.convertTo(img_base_8u, CV_8U, scale, -min_val * scale);
+
+            // S3 & S4: CLAHE + HE 融合
+            cv::Mat img_base_clahe, img_base_he;
+            cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+            clahe->apply(img_base_8u, img_base_clahe);
+            cv::equalizeHist(img_base_8u, img_base_he);
+
+            cv::Mat img_base_final_f;
+            double alpha = 0.7; 
+            cv::addWeighted(img_base_clahe, alpha, img_base_he, (1.0 - alpha), 0, img_base_final_f, CV_32F);
+
+            // S5: 细节增强 (Gain)
+            double detail_gain = 2.0; // 调节此参数观察梯度变化
+            cv::Mat img_detail_enhanced_f;
+            img_detail_f.convertTo(img_detail_enhanced_f, CV_32F, scale * detail_gain);
+
+            // S7: 融合
+            cv::Mat img_final_f;
+            cv::add(img_base_final_f, img_detail_enhanced_f, img_final_f);
+            img_final_f.convertTo(img, CV_8U);
+        } else {
+            img = message.images.at(msg_id);
+        }
+    }
+    // ------------------------------------------------------
+    // 方案 3: 快速分层增强 (Fast Layered Enhancement)
+    // ------------------------------------------------------
+    else if (test_scheme == 3) { 
+        if (histogram_method == HistogramMethod::CLAHE) {
+            cv::Mat raw_img = message.images.at(msg_id);
+            
+            // 1. 转为 float 进行精准计算 (耗时极短)
+            cv::Mat img_f;
+            raw_img.convertTo(img_f, CV_32F); 
+
+            // 2. S1: 使用高斯滤波代替双边滤波 (速度提升关键点!)
+            // kernel size 5x5, sigma 0 (自动)
+            cv::Mat img_base_f;
+            cv::GaussianBlur(img_f, img_base_f, cv::Size(5, 5), 0);
+            
+            // 3. S2: 获取高频细节层 (Detail = Raw - Base)
+            cv::Mat img_detail_f;
+            cv::subtract(img_f, img_base_f, img_detail_f);
+
+            // 4. Base 层处理：转 8-bit -> CLAHE
+            // 这一步决定了整体画面的亮度和对比度
+            cv::Mat img_base_8u;
+            double min_val, max_val;
+            cv::minMaxLoc(img_base_f, &min_val, &max_val);
+            double scale = 255.0 / (max_val - min_val + 1e-5);
+            img_base_f.convertTo(img_base_8u, CV_8U, scale, -min_val * scale);
+
+            // 混合 CLAHE (局部) 和 HE (全局)
+            // 稍微降低 CLAHE 强度防止背景太花，依靠后面的 detail_gain 提纹理
+            cv::Mat img_base_clahe, img_base_he;
+            cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8)); // 这里的 2.0 够用了
+            clahe->apply(img_base_8u, img_base_clahe);
+            cv::equalizeHist(img_base_8u, img_base_he);
+
+            cv::Mat img_base_final_f;
+            double alpha = 0.7; // 70% CLAHE
+            cv::addWeighted(img_base_clahe, alpha, img_base_he, (1.0 - alpha), 0, img_base_final_f, CV_32F);
+
+            // 5. S5: 细节层增强 (核心调参点)
+            // 之前是 2.0，建议稍微提高一点补偿高斯滤波的平滑
+            // 如果梯度分太低(<25)，把这里改大；如果太高(>40)，改小
+            double detail_gain = 3.0; 
+            
+            cv::Mat img_detail_enhanced_f;
+            // 注意这里要乘上 scale，让 detail 层和 base 层处于同一个 0-255 的量级
+            img_detail_f.convertTo(img_detail_enhanced_f, CV_32F, scale * detail_gain);
+
+            // 6. S7: 融合输出
+            cv::Mat img_final_f;
+            cv::add(img_base_final_f, img_detail_enhanced_f, img_final_f);
+            
+            // 7. 防溢出截断 (Saturate) 并转回 8-bit
+            img_final_f.convertTo(img, CV_8U);
+        } else {
+            img = message.images.at(msg_id);
+        }
     }
 
-    // Extract image pyramid
+    // ------------------------------------------------------
+    // 方案 1: 简单仿真 (Simple Sim)
+    // ------------------------------------------------------
+    else if (test_scheme == 1) {
+        cv::Mat raw_img = message.images.at(msg_id);
+        cv::Mat img_16bit;
+        if (raw_img.depth() == CV_8U) raw_img.convertTo(img_16bit, CV_16U, 257.0);
+        else raw_img.copyTo(img_16bit);
+
+        cv::Mat img_8bit_base;
+        double min_val, max_val;
+        cv::minMaxLoc(img_16bit, &min_val, &max_val);
+        double scale = (max_val - min_val > 1e-5) ? 255.0 / (max_val - min_val) : 1.0;
+        img_16bit.convertTo(img_8bit_base, CV_8U, scale, -min_val * scale);
+
+        cv::GaussianBlur(img_8bit_base, img, cv::Size(3, 3), 0, 0);
+
+        if (histogram_method == HistogramMethod::CLAHE) {
+            cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+            clahe->apply(img, img);
+        } else if (histogram_method == HistogramMethod::HISTOGRAM) {
+            cv::equalizeHist(img, img);
+        }
+    }
+    // ------------------------------------------------------
+    // 方案 0: 原版 (Original)
+    // ------------------------------------------------------
+    else {
+        cv::GaussianBlur(message.images.at(msg_id), img, cv::Size(3, 3), 0, 0);
+        if (histogram_method == HistogramMethod::HISTOGRAM) {
+            cv::equalizeHist(message.images.at(msg_id), img);
+        } else if (histogram_method == HistogramMethod::CLAHE) {
+            cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(10.0, cv::Size(8, 8));
+            clahe->apply(message.images.at(msg_id), img);
+        } else {
+            img = message.images.at(msg_id);
+        }
+    }
+
+    // =========================================================
+    // 核心部分：计算评价指标并打印
+    // =========================================================
+    
+    // 1. 计算耗时 (ms)
+    double t_cost = ((double)cv::getTickCount() - t_start) / cv::getTickFrequency() * 1000.0;
+
+    // 2. 计算平均梯度 (反映纹理丰富度，越高越利于 KLT)
+    cv::Mat grad_x, grad_y, grad_mag;
+    cv::Sobel(img, grad_x, CV_32F, 1, 0, 3);
+    cv::Sobel(img, grad_y, CV_32F, 0, 1, 3);
+    cv::magnitude(grad_x, grad_y, grad_mag);
+    cv::Scalar mean_grad = cv::mean(grad_mag);
+    double score_gradient = mean_grad[0];
+
+    // 3. 计算图像熵 (反映信息量)
+    double score_entropy = compute_entropy(img);
+
+    // 4. 打印结果 (用颜色高亮)
+    // 为了不刷屏太快，可以只打印第一个相机或者每隔几帧打印
+    if (msg_id == 0) { 
+        PRINT_ERROR(YELLOW "=== SCHEME %d EVALUATION ===\n" RESET, test_scheme);
+        PRINT_ERROR(CYAN   "Time Cost:     %.4f ms\n" RESET, t_cost);
+        PRINT_ERROR(GREEN  "Gradient Score: %.4f (Texture Strength)\n" RESET, score_gradient);
+        PRINT_ERROR(GREEN  "Entropy Score:  %.4f (Info Richness)\n" RESET, score_entropy);
+        PRINT_ERROR(YELLOW "==========================\n" RESET);
+    }
+
+    // Extract image pyramid (原流程)
     std::vector<cv::Mat> imgpyr;
     cv::buildOpticalFlowPyramid(img, imgpyr, win_size, pyr_levels);
 
-    // Save!
     img_curr[cam_id] = img;
     img_pyramid_curr[cam_id] = imgpyr;
   }

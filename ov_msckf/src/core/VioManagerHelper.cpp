@@ -399,8 +399,8 @@ cv::Mat VioManager::get_historical_viz_image() {
   }
 
   // Text we will overlay if needed
-  std::string overlay = (did_zupt_update) ? "zvupt" : "";
-  overlay = (!is_initialized_vio) ? "init" : overlay;
+  std::string overlay = (did_zupt_update) ? "" : "";
+  overlay = (!is_initialized_vio) ? "" : overlay;
 
   // Get the current active tracks
   cv::Mat img_history;
