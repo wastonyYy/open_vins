@@ -39,7 +39,7 @@ TrackBase::TrackBase(std::unordered_map<size_t, std::shared_ptr<CamBase>> camera
     mtx_feeds.swap(list);
   }
 }
-
+#if 0
 void TrackBase::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay) {
 
   // Cache the images to prevent other threads from editing while we viz (which can be slow)
@@ -115,7 +115,130 @@ void TrackBase::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2,
     index_cam++;
   }
 }
+#endif
 
+#if 1
+void TrackBase::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay) {
+
+  // Cache the images to prevent other threads from editing while we viz (which can be slow)
+  std::map<size_t, cv::Mat> img_last_cache, img_mask_last_cache;
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last_cache;
+  {
+    std::lock_guard<std::mutex> lckv(mtx_last_vars);
+    img_last_cache = img_last;
+    img_mask_last_cache = img_mask_last;
+    pts_last_cache = pts_last;
+  }
+
+  // Get the largest width and height
+  int max_width = -1;
+  int max_height = -1;
+  for (auto const &pair : img_last_cache) {
+    if (max_width < pair.second.cols)
+      max_width = pair.second.cols;
+    if (max_height < pair.second.rows)
+      max_height = pair.second.rows;
+  }
+
+  // Return if we didn't have a last image
+  if (img_last_cache.empty() || max_width == -1 || max_height == -1)
+    return;
+
+  // If the image is "small" thus we should use smaller display codes
+  bool is_small = (std::min(max_width, max_height) < 400);
+
+  // If the image is "new" then draw the images from scratch
+  // Otherwise, we grab the subset of the main image and draw on top of it
+  bool image_new = ((int)img_last_cache.size() * max_width != img_out.cols || max_height != img_out.rows);
+
+  // If new, then resize the current image
+  if (image_new)
+    img_out = cv::Mat(max_height, (int)img_last_cache.size() * max_width, CV_8UC3, cv::Scalar(0, 0, 0));
+
+  // Loop through each image, and draw
+  int index_cam = 0;
+  for (auto const &pair : img_last_cache) {
+    // select the subset of the image
+    cv::Mat img_temp;
+    if (image_new)
+      cv::cvtColor(img_last_cache[pair.first], img_temp, cv::COLOR_GRAY2RGB);
+    else
+      img_temp = img_out(cv::Rect(max_width * index_cam, 0, max_width, max_height));
+
+    // =========================================================
+    // [ADDITION] Draw Grid Visualization (绘制网格线)
+    // =========================================================
+    // 如果想要更通用，最好将 grid_x/grid_y 作为成员变量加入 TrackBase
+    int grid_rows = 4;
+    int grid_cols = 4;
+    
+    // 使用淡青色 (Light Cyan/Blue) 保证在热成像(黑白)中清晰可见
+    // BGR: (255, 204, 102) 类似参考图中的淡蓝
+    cv::Scalar grid_color(255, 204, 102); 
+    int thickness = 1;
+
+    // 使用与 Grider 相同的整数除法逻辑计算步长，保证位置对齐
+    int step_x = img_temp.cols / grid_cols;
+    int step_y = img_temp.rows / grid_rows;
+
+    // 绘制竖线 (Vertical Lines)
+    // 循环从 1 到 grid_cols-1 (例如 1, 2, 3)
+    for (int i = 1; i < grid_cols; i++) {
+        int x = i * step_x;
+        // 确保不画出界
+        if (x < img_temp.cols) {
+            cv::line(img_temp, cv::Point(x, 0), cv::Point(x, img_temp.rows), grid_color, thickness);
+        }
+    }
+
+    // 绘制横线 (Horizontal Lines)
+    for (int i = 1; i < grid_rows; i++) {
+        int y = i * step_y;
+        if (y < img_temp.rows) {
+            cv::line(img_temp, cv::Point(0, y), cv::Point(img_temp.cols, y), grid_color, thickness);
+        }
+    }
+    // =========================================================
+
+    // draw, loop through all keypoints
+    for (size_t i = 0; i < pts_last_cache[pair.first].size(); i++) {
+      // Get bounding pts for our boxes
+      cv::Point2f pt_l = pts_last_cache[pair.first].at(i).pt;
+      // Draw the extracted points and ID
+      // 使用实心圆点
+      cv::circle(img_temp, pt_l, (is_small) ? 1 : 2, cv::Scalar(r1, g1, b1), cv::FILLED);
+      // cv::putText(img_out, std::to_string(ids_left_last.at(i)), pt_l, cv::FONT_HERSHEY_SIMPLEX,0.5,cv::Scalar(0,0,255),1,cv::LINE_AA);
+      
+      // Draw rectangle around the point
+      cv::Point2f pt_l_top = cv::Point2f(pt_l.x - 3, pt_l.y - 3);
+      cv::Point2f pt_l_bot = cv::Point2f(pt_l.x + 3, pt_l.y + 3);
+      cv::rectangle(img_temp, pt_l_top, pt_l_bot, cv::Scalar(r2, g2, b2), 1);
+    }
+    
+    // Draw what camera this is
+    auto txtpt = (is_small) ? cv::Point(10, 30) : cv::Point(30, 60);
+    if (overlay == "") {
+      cv::putText(img_temp, "CAM:" + std::to_string((int)pair.first), txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL, (is_small) ? 1.5 : 3.0,
+                  cv::Scalar(0, 255, 0), 3);
+    } else {
+      cv::putText(img_temp, overlay, txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL, (is_small) ? 1.5 : 3.0, cv::Scalar(0, 0, 255), 3);
+    }
+    
+    // Overlay the mask (Optional: if you want grid ON TOP of mask, move grid drawing after this block)
+    // 当前逻辑：网格在最底层 -> 特征点 -> 文字 -> 红色Mask覆盖
+    // 这意味着如果Mask是红色的，网格线会被Mask稍微染红，但不会消失
+    cv::Mat mask = cv::Mat::zeros(img_mask_last_cache[pair.first].rows, img_mask_last_cache[pair.first].cols, CV_8UC3);
+    mask.setTo(cv::Scalar(0, 0, 255), img_mask_last_cache[pair.first]);
+    cv::addWeighted(mask, 0.1, img_temp, 1.0, 0.0, img_temp);
+    
+    // Replace the output image
+    img_temp.copyTo(img_out(cv::Rect(max_width * index_cam, 0, img_last_cache[pair.first].cols, img_last_cache[pair.first].rows)));
+    index_cam++;
+  }
+}
+#endif
+
+#if 0
 void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::vector<size_t> highlighted,
                                 std::string overlay) {
 
@@ -226,7 +349,120 @@ void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2
     index_cam++;
   }
 }
+#endif
 
+#if 1
+void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, 
+                                std::vector<size_t> highlighted, std::string overlay) {
+
+  // 1. 线程安全锁定与数据缓存
+  std::map<size_t, cv::Mat> img_last_cache, img_mask_last_cache;
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last_cache;
+  std::unordered_map<size_t, std::vector<size_t>> ids_last_cache;
+  {
+    std::lock_guard<std::mutex> lckv(mtx_last_vars);
+    img_last_cache = img_last;
+    img_mask_last_cache = img_mask_last;
+    pts_last_cache = pts_last;
+    ids_last_cache = ids_last;
+  }
+
+  // 2. 计算画布尺寸
+  int max_width = -1;
+  int max_height = -1;
+  for (auto const &pair : img_last_cache) {
+    if (max_width < pair.second.cols) max_width = pair.second.cols;
+    if (max_height < pair.second.rows) max_height = pair.second.rows;
+  }
+
+  if (img_last_cache.empty() || max_width == -1 || max_height == -1) return;
+
+  // 3. 初始化输出图像
+  bool is_small = (std::min(max_width, max_height) < 400);
+  bool image_new = ((int)img_last_cache.size() * max_width != img_out.cols || max_height != img_out.rows);
+
+  if (image_new)
+    img_out = cv::Mat(max_height, (int)img_last_cache.size() * max_width, CV_8UC3, cv::Scalar(0, 0, 0));
+
+  // ==========================================
+  // [配置] 轨迹参数
+  // ==========================================
+  size_t maxtracks = 200; // 增加轨迹长度，方便观察漂移
+  int line_thickness = 2; // 线条加粗，热成像下更清晰
+
+  // 4. 遍历每个相机进行绘制
+  int index_cam = 0;
+  for (auto const &pair : img_last_cache) {
+    // 提取当前相机的图像区域
+    cv::Mat img_temp;
+    if (image_new)
+      cv::cvtColor(img_last_cache[pair.first], img_temp, cv::COLOR_GRAY2RGB);
+    else
+      img_temp = img_out(cv::Rect(max_width * index_cam, 0, max_width, max_height));
+
+    // 遍历所有特征点
+    for (size_t i = 0; i < ids_last_cache[pair.first].size(); i++) {
+      
+      // (可选) 高亮显示特定的点
+      if (std::find(highlighted.begin(), highlighted.end(), ids_last_cache[pair.first].at(i)) != highlighted.end()) {
+        cv::Point2f pt_c = pts_last_cache[pair.first].at(i).pt;
+        int r = (is_small) ? 3 : 5;
+        // 画绿色框和点
+        cv::rectangle(img_temp, cv::Point2f(pt_c.x - r, pt_c.y - r), cv::Point2f(pt_c.x + r, pt_c.y + r), cv::Scalar(0, 255, 0), 1);
+        cv::circle(img_temp, pt_c, (is_small) ? 1 : 2, cv::Scalar(0, 255, 0), cv::FILLED);
+      }
+
+      // 从数据库获取特征历史
+      Feature feat;
+      if (!database->get_feature_clone(ids_last_cache[pair.first].at(i), feat)) continue;
+      if (feat.uvs.empty() || feat.uvs[pair.first].empty() || feat.to_delete) continue;
+
+      size_t track_len = feat.uvs[pair.first].size();
+      if (track_len < 2) continue;
+
+      // ==========================================
+      // [核心绘制逻辑] 倒序绘制：从新到旧
+      // ==========================================
+      for (size_t z = track_len - 1; z > 0; z--) {
+        // 限制轨迹长度
+        if (track_len - z > maxtracks) break;
+
+        // 计算颜色渐变权重 (0.0 = 最旧/冷色, 1.0 = 最新/热色)
+        double ratio = (double)z / track_len;
+        bool is_stereo = (feat.uvs.size() > 1);
+        
+        // 线性插值计算颜色
+        int color_r = (is_stereo ? b2 : r2) - (int)((double)((is_stereo ? b1 : r1)) * (1.0 - ratio)); 
+        int color_g = (is_stereo ? r2 : g2) - (int)((double)((is_stereo ? r1 : g1)) * (1.0 - ratio));
+        int color_b = (is_stereo ? g2 : b2) - (int)((double)((is_stereo ? g1 : b1)) * (1.0 - ratio));
+        
+        cv::Scalar color(color_r, color_g, color_b);
+
+        // 获取当前点和前一个点的坐标
+        cv::Point2f pt_curr(feat.uvs[pair.first].at(z)(0), feat.uvs[pair.first].at(z)(1));
+        cv::Point2f pt_prev(feat.uvs[pair.first].at(z - 1)(0), feat.uvs[pair.first].at(z - 1)(1));
+
+        // 1. 绘制轨迹线 (连接 z 和 z-1)
+        cv::line(img_temp, pt_curr, pt_prev, color, line_thickness);
+
+        // 2. 仅在最新的位置画圆点 (Head)，历史轨迹不画圆点，保持画面整洁
+        if (z == track_len - 1) {
+            cv::circle(img_temp, pt_curr, (is_small) ? 2 : 3, color, cv::FILLED);
+        }
+      }
+    }
+
+    // 5. 叠加 Mask (红色遮罩)
+    cv::Mat mask = cv::Mat::zeros(img_mask_last_cache[pair.first].rows, img_mask_last_cache[pair.first].cols, CV_8UC3);
+    mask.setTo(cv::Scalar(0, 0, 255), img_mask_last_cache[pair.first]);
+    cv::addWeighted(mask, 0.1, img_temp, 1.0, 0.0, img_temp);
+
+    // 6. 将处理好的小图填回大图
+    img_temp.copyTo(img_out(cv::Rect(max_width * index_cam, 0, img_last_cache[pair.first].cols, img_last_cache[pair.first].rows)));
+    index_cam++;
+  }
+}
+#endif 
 void TrackBase::change_feat_id(size_t id_old, size_t id_new) {
 
   // If found in db then replace

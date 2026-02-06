@@ -1011,7 +1011,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     }
   }
 }
-
+#if 0
 void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &kpts0,
                                 std::vector<cv::KeyPoint> &kpts1, size_t id0, size_t id1, std::vector<uchar> &mask_out) {
 
@@ -1070,3 +1070,135 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
     kpts1.at(i).pt = pts1.at(i);
   }
 }
+#endif
+
+#if 1
+void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr,
+                                std::vector<cv::KeyPoint> &kpts0, std::vector<cv::KeyPoint> &kpts1, 
+                                size_t id0, size_t id1, std::vector<uchar> &mask_out) {
+
+  // 1. 基础检查
+  assert(kpts0.size() == kpts1.size());
+  if (kpts0.empty() || kpts1.empty()) {
+    // printf("[KLT] Keypoints empty!\n"); 
+    return;
+  }
+
+  // 2. 内存预分配 (借鉴参考代码，加速)
+  mask_out.reserve(kpts0.size());
+  std::vector<cv::Point2f> pts0, pts1;
+  pts0.reserve(kpts0.size());
+  pts1.reserve(kpts0.size());
+
+  // 转换 KeyPoint -> Point2f
+  for (const auto& kp : kpts0) pts0.emplace_back(kp.pt);
+  for (const auto& kp : kpts1) pts1.emplace_back(kp.pt); // 这里通常是上一帧的位置或者IMU预测位置
+
+  // 如果点数太少，直接填0返回，或者视情况保留
+  if (pts0.size() < 5) {
+    mask_out.resize(pts0.size(), 0);
+    return;
+  }
+
+  // ==========================================
+  // 3. KLT 跟踪 (加入双向检查增强鲁棒性)
+  // ==========================================
+  std::vector<uchar> mask_klt_fw; // 正向 mask
+  std::vector<float> error_fw;
+  
+  cv::TermCriteria term_crit = cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, 0.01);
+  // 3.1 正向跟踪 (Last -> Curr)
+  cv::calcOpticalFlowPyrLK(img0pyr, img1pyr, pts0, pts1, mask_klt_fw, error_fw, 
+                           win_size, pyr_levels, term_crit, cv::OPTFLOW_USE_INITIAL_FLOW);
+
+  // 3.2 [关键优化] 反向跟踪 (Curr -> Last) Check
+  // 热成像纹理容易滑移，单向跟踪不可靠，必须做反向验证
+  std::vector<cv::Point2f> pts0_back;
+  std::vector<uchar> mask_klt_bw;
+  std::vector<float> error_bw;
+  cv::calcOpticalFlowPyrLK(img1pyr, img0pyr, pts1, pts0_back, mask_klt_bw, error_bw, 
+                           win_size, pyr_levels, term_crit, 0);
+
+  // 3.3 距离一致性筛选
+  std::vector<uchar> mask_status(pts0.size(), 0);
+  int valid_track_count = 0;
+  for (size_t i = 0; i < pts0.size(); i++) {
+      if (mask_klt_fw[i] && mask_klt_bw[i]) {
+          // 计算往返误差
+          float dist = cv::norm(pts0[i] - pts0_back[i]);
+          // 阈值设为 0.5 或 1.0 像素
+          if (dist <= 1.0f) {
+              mask_status[i] = 1;
+              valid_track_count++;
+          }
+      }
+  }
+
+  // ==========================================
+  // 4. RANSAC 剔除外点
+  // ==========================================
+  
+  // 归一化坐标准备
+  std::vector<cv::Point2f> pts0_n, pts1_n;
+  pts0_n.reserve(valid_track_count);
+  pts1_n.reserve(valid_track_count);
+  
+  // 建立索引映射，方便最后回填 mask_out
+  std::vector<int> valid_indices; 
+  valid_indices.reserve(valid_track_count);
+
+  for (size_t i = 0; i < pts0.size(); i++) {
+      if (mask_status[i]) {
+          pts0_n.emplace_back(camera_calib.at(id0)->undistort_cv(pts0[i]));
+          pts1_n.emplace_back(camera_calib.at(id1)->undistort_cv(pts1[i]));
+          valid_indices.push_back(i);
+      }
+  }
+
+  std::vector<uchar> mask_rsc;
+  int num_inliers = 0;
+
+  // 参考代码逻辑：只有点数足够多才做 RANSAC，否则太危险
+  if (pts0_n.size() >= 15) {
+      double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
+      // 对于单目，id0 == id1，这里不需要取 max(img0, img1)
+      
+      // [关键修改] 阈值放宽！
+      // 参考代码是 6.0，你之前是 2.0。建议热成像用 4.0 ~ 5.0。
+      // 因为去畸变后的归一化平面误差 = 像素误差 / 焦距
+      double ransac_thresh = 4.0 / max_focallength_img0; 
+      
+      // 使用 FM_RANSAC 或者 USAC_MAGSAC (OpenCV 4.5+ 推荐后者，更稳)
+      cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, ransac_thresh, 0.99, mask_rsc);
+  } else {
+      // 点太少，默认全是内点 (相信光流的双向检查)
+      mask_rsc.resize(pts0_n.size(), 1);
+  }
+
+  // ==========================================
+  // 5. 结果回填
+  // ==========================================
+  
+  // 初始化输出全为0
+  mask_out.assign(pts0.size(), 0);
+  
+  int rsc_idx = 0;
+  for (int idx : valid_indices) {
+      // 如果通过了 RANSAC (或者跳过了 RANSAC)
+      if (rsc_idx < mask_rsc.size() && mask_rsc[rsc_idx]) {
+          mask_out[idx] = 1;
+          
+          // 更新 KeyPoint 坐标 (只更新内点)
+          kpts0.at(idx).pt = pts0.at(idx);
+          kpts1.at(idx).pt = pts1.at(idx);
+          num_inliers++;
+      }
+      rsc_idx++;
+  }
+
+  // 6. 日志输出 (模仿参考代码)
+  // 仅在调试时开启，或者每隔几帧打印
+  printf("[KLT-MONO] Total: %zu | Flow Valid: %d | RANSAC Inliers: %d\n", 
+         pts0.size(), valid_track_count, num_inliers);
+}
+#endif
