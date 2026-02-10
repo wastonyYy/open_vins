@@ -1,0 +1,24 @@
+<launch>
+
+
+    <!-- what ros bag to play -->
+    <arg name="bag_name"    default="room_01" />
+    <arg name="bag_path"    default="/root/data/M2DGR" />
+
+    <!-- where to save the recorded poses -->
+    <arg name="path_save"   default="/root/data/M2DGR/ov_data/" />
+
+
+    <!-- record the trajectory -->
+    <node name="recorder_estimate" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+        <param name="topic"      type="str" value="/ov_msckf/odomimu" />
+        <param name="topic_type" type="str" value="Odometry" />
+        <param name="output"     type="str" value="/root/data/M2DGR/room_01_gt.txt" />
+    </node>
+
+
+    <!-- play the dataset -->
+    <node pkg="rosbag" type="play" name="rosbag" args="-r 4 $(arg bag_path)/$(arg bag_name).bag" required="true"/>
+
+
+</launch>

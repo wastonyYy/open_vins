@@ -1,0 +1,27 @@
+%YAML:1.0
+
+cam0:
+  # Extrinsics: T_imu_cam (Transformation from Camera frame to IMU frame)
+  # Calculated via: T_I_C = inv(T_L_I) * T_L_C
+  # Rotation: [0, 0, 1; -1, 0, 0; 0, -1, 0]
+  # Translation: [0.57711, 0.17012, 0.83330]
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.57711]
+    - [-1.0, 0.0, 0.0, 0.17012]
+    - [0.0, -1.0, 0.0, 0.83330]
+    - [0.0, 0.0, 0.0, 1.0]
+    
+  cam_overlaps: [0]
+  camera_model: pinhole
+  
+  # Distortion from "Cam-thermal" data
+  # [-0.436107..., 0.166413..., 0, 0]
+  distortion_coeffs: [-0.436107594318055, 0.166413618922992, 0.0, 0.0]
+  distortion_model: radtan
+  
+  # Intrinsics from "Cam-thermal" data
+  # fx: 435.836, fy: 435.909, cx: 324.452, cy: 255.554
+  intrinsics: [435.836180277211, 435.909430631362, 324.452753232850, 255.554320082190]
+  
+  resolution: [640, 512]
+  rostopic: /thermal_mono
