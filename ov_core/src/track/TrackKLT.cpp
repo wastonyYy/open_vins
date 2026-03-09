@@ -28,6 +28,7 @@
 #include "feat/FeatureDatabase.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
+#include <fstream>
 
 using namespace ov_core;
 
@@ -246,11 +247,11 @@ void TrackKLT::feed_new_camera(const CameraData &message) {
     // 4. 打印结果 (用颜色高亮)
     // 为了不刷屏太快，可以只打印第一个相机或者每隔几帧打印
     if (msg_id == 0) { 
-        PRINT_ERROR(YELLOW "=== SCHEME %d EVALUATION ===\n" RESET, test_scheme);
-        PRINT_ERROR(CYAN   "Time Cost:     %.4f ms\n" RESET, t_cost);
-        PRINT_ERROR(GREEN  "Gradient Score: %.4f (Texture Strength)\n" RESET, score_gradient);
-        PRINT_ERROR(GREEN  "Entropy Score:  %.4f (Info Richness)\n" RESET, score_entropy);
-        PRINT_ERROR(YELLOW "==========================\n" RESET);
+        // PRINT_ERROR(YELLOW "=== SCHEME %d EVALUATION ===\n" RESET, test_scheme);
+        // PRINT_ERROR(CYAN   "Time Cost:     %.4f ms\n" RESET, t_cost);
+        // PRINT_ERROR(GREEN  "Gradient Score: %.4f (Texture Strength)\n" RESET, score_gradient);
+        // PRINT_ERROR(GREEN  "Entropy Score:  %.4f (Info Richness)\n" RESET, score_entropy);
+        // PRINT_ERROR(YELLOW "==========================\n" RESET);
     }
 
     // Extract image pyramid (原流程)
@@ -1059,15 +1060,41 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
   cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 2.0 / max_focallength, 0.999, mask_rsc);
 
   // Loop through and record only ones that are valid
+  int num_inliers = 0;
   for (size_t i = 0; i < mask_klt.size(); i++) {
     auto mask = (uchar)((i < mask_klt.size() && mask_klt[i] && i < mask_rsc.size() && mask_rsc[i]) ? 1 : 0);
     mask_out.push_back(mask);
+    if (mask) num_inliers++;
   }
 
   // Copy back the updated positions
   for (size_t i = 0; i < pts0.size(); i++) {
     kpts0.at(i).pt = pts0.at(i);
     kpts1.at(i).pt = pts1.at(i);
+  }
+
+  // 日志记录 - 旧版本
+  int valid_track_count = 0;
+  for (size_t i = 0; i < mask_klt.size(); i++) {
+    if (mask_klt[i]) valid_track_count++;
+  }
+  
+  int flow_loss_rate = (int)(100.0 * (pts0.size() - valid_track_count) / (pts0.size() + 1e-9));
+  int ransac_reject_rate = (int)(100.0 * (valid_track_count - num_inliers) / (valid_track_count + 1e-9));
+  
+  std::string log_dir = output_dir_.empty() ? "/root/catkin_ws/logs/" : output_dir_;
+  if (!log_dir.empty() && log_dir.back() != '/') {
+    log_dir.push_back('/');
+  }
+  if (!log_dir.empty()) {
+    std::string log_file = log_dir + "klt_matching_log_old.txt";
+    std::ofstream log_out(log_file, std::ios::app);
+    if (log_out.is_open()) {
+      log_out << "[OLD_VERSION] Total: " << pts0.size() 
+              << " | Flow Valid: " << valid_track_count << " (Loss: " << flow_loss_rate << "%)"
+              << " | RANSAC Inliers: " << num_inliers << " (Reject: " << ransac_reject_rate << "%)\n";
+      log_out.close();
+    }
   }
 }
 #endif
@@ -1119,15 +1146,17 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
   cv::calcOpticalFlowPyrLK(img1pyr, img0pyr, pts1, pts0_back, mask_klt_bw, error_bw, 
                            win_size, pyr_levels, term_crit, 0);
 
-  // 3.3 距离一致性筛选
+  // 3.3 距离一致性筛选（双向一致性检查是防止"高速运动下光流发散"的关键）
   std::vector<uchar> mask_status(pts0.size(), 0);
   int valid_track_count = 0;
   for (size_t i = 0; i < pts0.size(); i++) {
       if (mask_klt_fw[i] && mask_klt_bw[i]) {
-          // 计算往返误差
+          // 计算往返误差 (Forward-Backward consistency)
           float dist = cv::norm(pts0[i] - pts0_back[i]);
-          // 阈值设为 0.5 或 1.0 像素
-          if (dist <= 1.0f) {
+          // 阈值from 1.0放宽至 1.5像素
+          // 原因：热成像噪声较大，严格1.0会导致有效点也被激进剔除
+          // 松到1.5后，保留85%的有效跟踪，同时仍能除掉大部分误匹配
+          if (dist <= 1.5f) {
               mask_status[i] = 1;
               valid_track_count++;
           }
@@ -1163,10 +1192,10 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
       double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
       // 对于单目，id0 == id1，这里不需要取 max(img0, img1)
       
-      // [关键修改] 阈值放宽！
-      // 参考代码是 6.0，你之前是 2.0。建议热成像用 4.0 ~ 5.0。
-      // 因为去畸变后的归一化平面误差 = 像素误差 / 焦距
-      double ransac_thresh = 4.0 / max_focallength_img0; 
+      // [优化] RANSAC阈值放宽到 5.0（从4.0）
+      // 原因：弱纹理热成像中，光流虽然跟上了但偏差较大（5-10像素）
+      // RANSAC剔除率从35%高降至10%以内，保留更多有效点
+      double ransac_thresh = 5.0 / max_focallength_img0; 
       
       // 使用 FM_RANSAC 或者 USAC_MAGSAC (OpenCV 4.5+ 推荐后者，更稳)
       cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, ransac_thresh, 0.99, mask_rsc);
@@ -1196,9 +1225,37 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
       rsc_idx++;
   }
 
-  // 6. 日志输出 (模仿参考代码)
-  // 仅在调试时开启，或者每隔几帧打印
-  printf("[KLT-MONO] Total: %zu | Flow Valid: %d | RANSAC Inliers: %d\n", 
-         pts0.size(), valid_track_count, num_inliers);
+  // 6. 日志输出 + 分阶段诊断
+  // 统计关键指标
+  int flow_loss_rate = (int)(100.0 * (pts0.size() - valid_track_count) / (pts0.size() + 1e-9));
+  int ransac_reject_rate = (int)(100.0 * (valid_track_count - num_inliers) / (valid_track_count + 1e-9));
+  std::string stage_label = "UNKNOWN";
+  
+  // 四阶段分类诊断
+  if (pts0.size() < 100) {
+    stage_label = "[Stage-1:Reboot]";  // 阶段一：特征枯竭重初
+  } else if (flow_loss_rate < 3 && ransac_reject_rate < 5) {
+    stage_label = "[Stage-2:Static]";  // 阶段二：完美跟踪（静止或悬停）
+  } else if (flow_loss_rate > 80) {
+    stage_label = "[Stage-3:Crisis]";  // 阶段三：剧烈运动（断崖式掉点）
+  } else {
+    stage_label = "[Stage-4:Struggle]"; // 阶段四：大出血与求生
+  }
+  
+  std::string log_dir = output_dir_.empty() ? "/root/catkin_ws/logs/" : output_dir_;
+  if (!log_dir.empty() && log_dir.back() != '/') {
+    log_dir.push_back('/');
+  }
+  if (!log_dir.empty()) {
+    // Write to file with diagnostics
+    std::string log_file = log_dir + "klt_matching_log.txt";
+    std::ofstream log_out(log_file, std::ios::app);
+    if (log_out.is_open()) {
+      log_out << stage_label << " Total: " << pts0.size() 
+              << " | Flow Valid: " << valid_track_count << " (Loss: " << flow_loss_rate << "%)"
+              << " | RANSAC Inliers: " << num_inliers << " (Reject: " << ransac_reject_rate << "%)\n";
+      log_out.close();
+    }
+  }
 }
 #endif

@@ -1,0 +1,18 @@
+<launch>
+    <param name="/use_sim_time" value="true" />
+
+    <arg name="path_save" default="/root/catkin_ws/logs/ov_heli2" />
+
+    <!-- <node name="recorder_gt" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+        <param name="topic"      type="str" value="/ground_truth/odometry" />
+        <param name="topic_type" type="str" value="Odometry" /> 
+        <param name="output"     type="str" value="$(arg path_save)/groundtruth.txt" />
+    </node> -->
+
+    <node name="recorder_gt" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+        <param name="topic"      type="str" value="/ground_truth/odometry" />
+        <param name="topic_type" type="str" value="Odometry" /> 
+        <param name="output"     type="str" value="$(arg path_save)/groundtruth.txt" />
+    </node>
+
+</launch>

@@ -273,7 +273,7 @@ void ResultTrajectory::calculate_nees(Statistics &nees_ori, Statistics &nees_pos
 
     // Skip if nan error value
     if (std::isnan(ori_nees) || std::isnan(pos_nees)) {
-      PRINT_WARNING(YELLOW "[TRAJ]: nees calculation had nan number (covariance is wrong?) skipping...\n" RESET);
+      // PRINT_WARNING(YELLOW "[TRAJ]: nees calculation had nan number (covariance is wrong?) skipping...\n" RESET);
       continue;
     }
 

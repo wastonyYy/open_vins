@@ -1,0 +1,10 @@
+<launch>
+    <param name="/use_sim_time" value="true" />
+
+    <arg name="path_save" default="/root/catkin_ws/logs/ov_heli2" />
+
+    <node name="heli2_record" pkg="ov_eval" type="heli2_path2txt.py" output="screen" required="true">
+        <param name="topic"  type="str" value="/ov_msckf/pathimu" />
+        <param name="output" type="str" value="$(arg path_save)/heli2.txt" />
+    </node>
+</launch>
