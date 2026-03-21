@@ -24,4 +24,4 @@ cam0:
   intrinsics: [435.836180277211, 435.909430631362, 324.452753232850, 255.554320082190]
   
   resolution: [640, 512]
-  rostopic: /thermal_mono
+  rostopic: /thermal_image_raw

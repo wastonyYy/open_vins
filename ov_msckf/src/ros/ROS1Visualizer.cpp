@@ -505,10 +505,21 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   }
   camera_last_timestamp[cam_id0] = timestamp;
 
-  // Get the image
+  // Get the image (handle both color and mono)
   cv_bridge::CvImageConstPtr cv_ptr;
+  cv::Mat image_mono;
   try {
-    cv_ptr = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
+    // First try to get as-is
+    cv_ptr = cv_bridge::toCvShare(msg0);
+    // Convert to grayscale if needed
+    if (cv_ptr->image.channels() == 3) {
+      cv::cvtColor(cv_ptr->image, image_mono, cv::COLOR_BGR2GRAY);
+    } else if (cv_ptr->image.channels() == 1) {
+      image_mono = cv_ptr->image;
+    } else {
+      PRINT_ERROR("Unsupported image channels: %d\n", cv_ptr->image.channels());
+      return;
+    }
   } catch (cv_bridge::Exception &e) {
     PRINT_ERROR("cv_bridge exception: %s", e.what());
     return;
@@ -518,7 +529,7 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   ov_core::CameraData message;
   message.timestamp = cv_ptr->header.stamp.toSec();
   message.sensor_ids.push_back(cam_id0);
-  message.images.push_back(cv_ptr->image.clone());
+  message.images.push_back(image_mono.clone());
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation
@@ -545,10 +556,19 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
   }
   camera_last_timestamp[cam_id0] = timestamp;
 
-  // Get the image
+  // Get the image (handle both color and mono)
   cv_bridge::CvImageConstPtr cv_ptr0;
+  cv::Mat image_mono0;
   try {
-    cv_ptr0 = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
+    cv_ptr0 = cv_bridge::toCvShare(msg0);
+    if (cv_ptr0->image.channels() == 3) {
+      cv::cvtColor(cv_ptr0->image, image_mono0, cv::COLOR_BGR2GRAY);
+    } else if (cv_ptr0->image.channels() == 1) {
+      image_mono0 = cv_ptr0->image;
+    } else {
+      PRINT_ERROR("Unsupported image channels: %d\n", cv_ptr0->image.channels());
+      return;
+    }
   } catch (cv_bridge::Exception &e) {
     PRINT_ERROR("cv_bridge exception: %s\n", e.what());
     return;
@@ -556,8 +576,17 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
 
   // Get the image
   cv_bridge::CvImageConstPtr cv_ptr1;
+  cv::Mat image_mono1;
   try {
-    cv_ptr1 = cv_bridge::toCvShare(msg1, sensor_msgs::image_encodings::MONO8);
+    cv_ptr1 = cv_bridge::toCvShare(msg1);
+    if (cv_ptr1->image.channels() == 3) {
+      cv::cvtColor(cv_ptr1->image, image_mono1, cv::COLOR_BGR2GRAY);
+    } else if (cv_ptr1->image.channels() == 1) {
+      image_mono1 = cv_ptr1->image;
+    } else {
+      PRINT_ERROR("Unsupported image channels: %d\n", cv_ptr1->image.channels());
+      return;
+    }
   } catch (cv_bridge::Exception &e) {
     PRINT_ERROR("cv_bridge exception: %s\n", e.what());
     return;
@@ -568,8 +597,8 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
   message.timestamp = cv_ptr0->header.stamp.toSec();
   message.sensor_ids.push_back(cam_id0);
   message.sensor_ids.push_back(cam_id1);
-  message.images.push_back(cv_ptr0->image.clone());
-  message.images.push_back(cv_ptr1->image.clone());
+  message.images.push_back(image_mono0.clone());
+  message.images.push_back(image_mono1.clone());
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation

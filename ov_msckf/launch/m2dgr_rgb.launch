@@ -25,7 +25,10 @@
     <!-- if we should viz the groundtruth -->
     <arg name="dolivetraj"  default="false" />
     <arg name="path_gt"     default="$(find ov_data)/$(arg config)/$(arg dataset).txt" />
-
+    
+    <node pkg="image_transport" type="republish" name="decompress_color_image" output="screen" 
+          args="compressed in:=/camera/color/image_raw raw out:=/camera/color/image_raw">
+    </node>
     <!-- MASTER NODE! -->
 <!--    <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true" launch-prefix="gdb -ex run &#45;&#45;args">-->
     <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true">
