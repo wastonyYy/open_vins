@@ -1,0 +1,14 @@
+%YAML:1.0
+cam0:
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.514563]
+    - [-1.0, 0.0, 0.0, -0.160250]
+    - [0.0, -1.0, 0.0, 0.012300]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.071477, 0.006424, -0.023546, 0.009182]
+  distortion_model: equidistant
+  intrinsics: [540.683000, 539.392000, 632.917000, 503.376000]
+  resolution: [1280, 1024]
+  rostopic: /camera/right/image_raw_out

@@ -1,0 +1,31 @@
+%YAML:1.0
+
+cam0:
+  # Left camera, T_imu_cam = inv(T_lidar_imu) * T_lidar_cam_left
+  T_imu_cam:
+    - [1.0, 0.0, 0.0, -0.16058]
+    - [0.0, 1.0, 0.0, 0.82087]
+    - [0.0, 0.0, 1.0, -0.06235]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [1]
+  camera_model: fisheye
+  distortion_coeffs: [-0.07015146608431883, 0.008586142263125124, -0.021968993685891842, 0.007442211946112636]
+  distortion_model: equidistant
+  intrinsics: [540.645056202188, 539.8545023658869, 626.4125666883942, 523.947634226782]
+  resolution: [1280, 1024]
+  rostopic: /camera/left/image_raw_out
+
+cam1:
+  # Right camera, T_imu_cam = inv(T_lidar_imu) * T_lidar_cam_right
+  T_imu_cam:
+    - [1.0, 0.0, 0.0, 0.16090]
+    - [0.0, 1.0, 0.0, 0.82100]
+    - [0.0, 0.0, 1.0, -0.06255]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.07147685334620411, 0.006423830171528276, -0.02354604292216998, 0.009181757660952325]
+  distortion_model: equidistant
+  intrinsics: [540.6832252229977, 539.3921307247979, 632.9173957218305, 503.3766864767991]
+  resolution: [1280, 1024]
+  rostopic: /camera/right/image_raw_out

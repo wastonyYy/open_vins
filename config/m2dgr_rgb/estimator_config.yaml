@@ -40,18 +40,18 @@ zupt_only_at_beginning: true
 # ==================================================================
 # ==================================================================
 
-init_window_time: 2.0
-init_imu_thresh: 0.30
-init_max_disparity: 2.0
-init_max_features: 50
+init_window_time: 3.0
+init_imu_thresh: 0.20
+init_max_disparity: 3.0
+init_max_features: 80
 
 init_dyn_use: true
 init_dyn_mle_opt_calib: false
 init_dyn_mle_max_iter: 50
 init_dyn_mle_max_time: 0.05
 init_dyn_mle_max_threads: 6
-init_dyn_num_pose: 6
-init_dyn_min_deg: 20.0
+init_dyn_num_pose: 5
+init_dyn_min_deg: 10.0
 
 init_dyn_inflation_ori: 10
 init_dyn_inflation_vel: 100
@@ -80,10 +80,10 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # we have a KLT and descriptor based (KLT is better implemented...)
 use_klt: true
 num_pts: 200
-fast_threshold: 20
+fast_threshold: 12
 grid_x: 10
 grid_y: 10
-min_px_dist: 4
+min_px_dist: 3
 knn_ratio: 0.70
 track_frequency: 40.0
 downsample_cameras: false

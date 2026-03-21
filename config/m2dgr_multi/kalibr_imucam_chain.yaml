@@ -1,0 +1,57 @@
+%YAML:1.0
+cam0:
+  T_imu_cam:
+    - [0, 0, 1, 0]
+    - [-1, 0, 0, 0]
+    - [0, -1, 0, 0]
+    - [0, 0, 0, 1]
+
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.061526, -0.008674, -0.009843, 0.004810]
+  distortion_model: equidistant
+  intrinsics: [538.315, 537.427, 632.402, 509.360]
+  resolution: [1280, 1024]
+  rostopic: /camera/third/image_raw_out
+cam1:
+  T_imu_cam:
+    - [-1, 0, 0, 0]
+    - [0, 0, -1, 0]
+    - [0, -1, 0, 0]
+    - [0, 0, 0, 1]
+
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.063293, -0.005282, -0.014396, 0.006593]
+  distortion_model: equidistant
+  intrinsics: [537.229, 536.642, 635.568, 491.942]
+  resolution: [1280, 1024]
+  rostopic: /camera/fourth/image_raw_out
+cam2:
+  T_imu_cam:
+    - [0, 0, -1, 0]
+    - [1, 0, 0, 0]
+    - [0, -1, 0, 0]
+    - [0, 0, 0, 1]
+
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.057504, -0.035555, 0.030555, -0.014358]
+  distortion_model: equidistant
+  intrinsics: [539.834, 538.714, 630.817, 501.863]
+  resolution: [1280, 1024]
+  rostopic: /camera/fifth/image_raw_out
+cam3:
+  T_imu_cam:
+    - [0, 0, -1, 0]
+    - [1, 0, 0, 0]
+    - [0, -1, 0, 0]
+    - [0, 0, 0, 1]
+
+  cam_overlaps: [0]
+  camera_model: fisheye
+  distortion_coeffs: [-0.066819, -0.005533, -0.006167, 0.001808]
+  distortion_model: equidistant
+  intrinsics: [543.412, 542.207, 642.967, 504.299]
+  resolution: [1280, 1024]
+  rostopic: /camera/sixth/image_raw_out

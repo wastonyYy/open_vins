@@ -1,0 +1,25 @@
+<launch>
+    <arg name="verbosity"   default="ALL" />
+    <arg name="config_path" default="/root/catkin_ws/src/open_vins/config/m2dgr_handsfree/estimator_config.yaml" />
+    <arg name="max_cameras" default="1" />
+    <arg name="use_stereo"  default="false" />
+    <arg name="bag_start"   default="0" />
+    <arg name="bag_rate"    default="1" />
+    <arg name="dobag"       default="false" />
+    <arg name="bag"         default="/root/data/room_dark_01.bag" />
+    <arg name="dosave"      default="false" />
+    <arg name="dotime"      default="false" />
+    <arg name="path_est"    default="/tmp/traj_estimate.txt" />
+    <arg name="path_time"   default="/tmp/traj_timing.txt" />
+
+    <node pkg="image_transport" type="republish" name="decompress_right" output="screen" args="compressed in:=/camera/right/image_raw raw out:=/camera/right/image_raw_out" />\n
+
+    <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true">
+        <param name="verbosity"                  type="string" value="$(arg verbosity)" />
+        <param name="config_path"                type="string" value="$(arg config_path)" />
+        <param name="use_stereo"                 type="bool"   value="$(arg use_stereo)" />
+        <param name="max_cameras"                type="int"    value="$(arg max_cameras)" />
+        <param name="record_timing_information"  type="bool"   value="$(arg dotime)" />
+        <param name="record_timing_filepath"     type="string" value="$(arg path_time)" />
+    </node>
+</launch>

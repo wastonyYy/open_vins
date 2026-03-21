@@ -1,6 +1,4 @@
 <launch>
-
-
     <!-- what ros bag to play -->
     <arg name="bag_name"    default="uzhfpv_outdoor_45/outdoor_45_1_snapdragon_with_gt" />
     <arg name="bag_path"    default="/media/patrick/RPNG\ FLASH\ 3/" />

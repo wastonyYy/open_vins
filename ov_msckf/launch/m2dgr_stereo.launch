@@ -1,0 +1,51 @@
+<launch>
+
+    <!-- dedicated config for m2dgr stereo left/right + camera imu -->
+    <arg name="verbosity"   default="ALL" />
+    <arg name="config_path" default="/root/catkin_ws/src/open_vins/config/m2dgr_stereo/estimator_config.yaml" />
+
+    <arg name="max_cameras" default="2" />
+    <arg name="use_stereo"  default="true" />
+
+    <arg name="bag_start"   default="0" />
+    <arg name="bag_rate"    default="1" />
+    <arg name="dobag"       default="false" />
+    <arg name="bag"         default="/root/data/room_dark_01.bag" />
+
+    <arg name="dosave"      default="false" />
+    <arg name="dotime"      default="false" />
+    <arg name="path_est"    default="/tmp/traj_estimate.txt" />
+    <arg name="path_time"   default="/tmp/traj_timing.txt" />
+
+    <!-- compressed image topics (input) -->
+    <arg name="left_in"  default="/camera/left/image_raw" />
+    <arg name="right_in" default="/camera/right/image_raw" />
+
+    <!-- republish compressed image -> raw image for OpenVINS -->
+    <node pkg="image_transport" type="republish" name="decompress_left_image" output="screen"
+          args="compressed in:=$(arg left_in) raw out:=/camera/left/image_raw_out" />
+    <node pkg="image_transport" type="republish" name="decompress_right_image" output="screen"
+          args="compressed in:=$(arg right_in) raw out:=/camera/right/image_raw_out" />
+
+    <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true">
+        <param name="verbosity"                  type="string" value="$(arg verbosity)" />
+        <param name="config_path"                type="string" value="$(arg config_path)" />
+        <param name="use_stereo"                 type="bool"   value="$(arg use_stereo)" />
+        <param name="max_cameras"                type="int"    value="$(arg max_cameras)" />
+        <param name="record_timing_information"  type="bool"   value="$(arg dotime)" />
+        <param name="record_timing_filepath"     type="string" value="$(arg path_time)" />
+    </node>
+
+    <group if="$(arg dobag)">
+        <node pkg="rosbag" type="play" name="rosbag" args="-d 1 -r $(arg bag_rate) -s $(arg bag_start) $(arg bag)" required="true"/>
+    </group>
+
+    <group if="$(arg dosave)">
+        <node name="recorder_estimate" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+            <param name="topic"      type="str" value="/ov_msckf/poseimu" />
+            <param name="topic_type" type="str" value="PoseWithCovarianceStamped" />
+            <param name="output"     type="str" value="$(arg path_est)" />
+        </node>
+    </group>
+
+</launch>
